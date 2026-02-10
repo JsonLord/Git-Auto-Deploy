@@ -1,11 +1,15 @@
 import collections
+try:
+    from collections.abc import MutableMapping
+except ImportError:
+    from collections import MutableMapping
 from ..wrappers import GitWrapper
 from ..lock import Lock
 from ..wrappers import GitWrapper
 from ..events import DeployEvent
 
 
-class Project(collections.MutableMapping):
+class Project(MutableMapping):
 
     """A dictionary that applies an arbitrary key-altering
        function before accessing the keys"""

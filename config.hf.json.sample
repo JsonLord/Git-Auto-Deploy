@@ -1,6 +1,10 @@
 {
-  "log-file": "~/gitautodeploy.log",
-  "pid-file": "~/.gitautodeploy.pid",
+  "http-port": 7860,
+  "http-host": "0.0.0.0",
+  "web-ui-enabled": true,
+  "web-ui-auth-enabled": false,
+  "log-file": "/tmp/gitautodeploy.log",
+  "pid-file": "/tmp/gitautodeploy.pid",
   "log-level": "INFO",
 
   "repositories": [
@@ -8,7 +12,7 @@
       "url": "https://github.com/your-user/your-repo.git",
       "branch": "main",
       "remote": "origin",
-      "path": "~/repositories/your-repo",
+      "path": "/app/repositories/your-repo",
 
       // Use the Hugging Face deployment script
       "deploy": "python3 scripts/deploy_to_hf.py --repo-path . --space-id your-user/your-space --branch main",
@@ -20,7 +24,6 @@
       // Optionally specify the GitHub repo explicitly if it cannot be parsed from the URL
       "github_repo": "your-user/your-repo",
 
-      // Filters can be used to only deploy certain branches
       "payload-filter": [
         {
           "ref": "refs/heads/main"

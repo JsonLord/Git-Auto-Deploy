@@ -102,7 +102,7 @@ class GitAutoDeploy(object):
                 continue
 
             logger.info("Scanning repository: %s" % repository['url'])
-            m = re.match('[^\@]+\@([^\:\/]+)(:(\d+))?', repository['url'])
+            m = re.match(r'[^\@]+\@([^\:\/]+)(:(\d+))?', repository['url'])
 
             if m is not None:
                 host = m.group(1)

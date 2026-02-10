@@ -1,3 +1,12 @@
+---
+title: Git-HF-Deployment
+emoji: 🧲
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+---
+
 [![Build Status](https://travis-ci.org/olipo186/Git-Auto-Deploy.svg?branch=master)](https://travis-ci.org/olipo186/Git-Auto-Deploy)
 # What is it?
 

@@ -1,9 +1,22 @@
 import argparse
 import os
-import subprocess
 import time
 import sys
+import shutil
+import requests
 from huggingface_hub import HfApi
+
+def get_hf_logs(space_id, token, log_type="build"):
+    url = f"https://huggingface.co/api/spaces/{space_id}/logs/{log_type}"
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return response.text
+        else:
+            return f"Failed to fetch {log_type} logs: {response.status_code}"
+    except Exception as e:
+        return f"Error fetching {log_type} logs: {e}"
 
 def main():
     parser = argparse.ArgumentParser(description='Deploy to Hugging Face Spaces')
@@ -22,31 +35,27 @@ def main():
     api = HfApi(token=token)
 
     try:
-        print(f"Pushing to Hugging Face Space: {args.space_id} branch: {args.branch}")
+        # Check if README.md exists in repo-path, if not, try to use README.hf.md
+        readme_path = os.path.join(args.repo_path, 'README.md')
+        if not os.path.exists(readme_path):
+            hf_readme = os.path.join(os.getcwd(), 'README.hf.md')
+            if os.path.exists(hf_readme):
+                print(f"README.md not found in {args.repo_path}. Using README.hf.md as template.")
+                shutil.copy(hf_readme, readme_path)
 
-        # Using oauth2 as username is a common pattern for token-based auth
-        remote_url = f"https://oauth2:{token}@huggingface.co/spaces/{args.space_id}"
+        print(f"Uploading to Hugging Face Space: {args.space_id} from {args.repo_path}")
 
-        # Check if remote 'hf' exists
-        check_remote = subprocess.run(["git", "remote", "get-url", "hf"], cwd=args.repo_path, capture_output=True)
+        api.upload_folder(
+            folder_path=args.repo_path,
+            repo_id=args.space_id,
+            repo_type="space",
+            path_in_repo="",
+            commit_message=f"Deploy branch {args.branch} via Git-Auto-Deploy",
+            delete_patterns="*",
+        )
 
-        if check_remote.returncode == 0:
-            # Update existing remote
-            subprocess.run(["git", "remote", "set-url", "hf", remote_url], cwd=args.repo_path, check=True)
-        else:
-            # Add new remote
-            subprocess.run(["git", "remote", "add", "hf", remote_url], cwd=args.repo_path, check=True)
+        print("Upload successful. Waiting for build...")
 
-        # Push to HF. We push the local branch to the remote's main branch.
-        result = subprocess.run(["git", "push", "hf", f"{args.branch}:main", "--force"], cwd=args.repo_path, capture_output=True, text=True)
-
-        if result.returncode != 0:
-            print(f"Error pushing to HF: {result.stderr}")
-            sys.exit(1)
-
-        print("Push successful. Waiting for build...")
-
-        # Poll for status
         max_retries = 30
         retry_interval = 20 # seconds
 
@@ -61,16 +70,13 @@ def main():
                     sys.exit(0)
                 elif status in ["BUILD_ERROR", "RUNTIME_ERROR", "DEVSERVER_ERROR"]:
                     print(f"Deployment failed with status: {status}")
-                    # Try to get logs
-                    try:
-                        # Attempt to get logs using API
-                        # In some versions of huggingface_hub, it might be different
-                        logs = api.get_space_logs(repo_id=args.space_id)
-                        print("--- Build/Runtime Logs ---")
-                        print(logs)
-                        print("--------------------------")
-                    except Exception as e:
-                        print(f"Could not fetch logs: {e}")
+
+                    log_type = "build" if status == "BUILD_ERROR" else "run"
+                    logs = get_hf_logs(args.space_id, token, log_type)
+
+                    print(f"--- {log_type.capitalize()} Logs ---")
+                    print(logs)
+                    print("--------------------------")
                     sys.exit(2)
             except Exception as e:
                 print(f"Error polling status: {e}")
