@@ -189,6 +189,12 @@ class Project(collections.MutableMapping):
             if 0 < n:
                 res = GitWrapper.deploy(self)
 
+                # Check for failures and report to Jules if configured
+                for r in res:
+                    if r != 0:
+                        self.report_failure_to_jules(r)
+                        break
+
         #except Exception as e:
         #    logger.error('Error during \'pull\' or \'deploy\' operation on path: %s' % self['path'])
         #    logger.error(e)
@@ -208,3 +214,60 @@ class Project(collections.MutableMapping):
         event.set_waiting(False)
         event.set_success(True)
 
+    def report_failure_to_jules(self, result):
+        """Report a deployment failure to Jules by creating a GitHub issue."""
+        import subprocess
+        import os
+        import logging
+        logger = logging.getLogger()
+
+        if not self.get('report_to_jules', False):
+            return
+
+        repo = self.get('github_repo')
+        if not repo:
+            # Try to extract from URL
+            import re
+            match = re.search(r'github\.com[:/]([^/]+/[^/.]+)(\.git)?', self['url'])
+            if match:
+                repo = match.group(1)
+            else:
+                logger.warning("Could not identify GitHub repository for reporting to Jules")
+                return
+
+        branch = self.get('branch', 'master')
+        space_id = self.get('huggingface_space', 'unknown')
+
+        # Get error message from stderr, or stdout if stderr is empty
+        error_msg = ""
+        if hasattr(result, 'stderr') and result.stderr:
+            error_msg = result.stderr
+        elif hasattr(result, 'stdout') and result.stdout:
+            error_msg = result.stdout
+        else:
+            error_msg = "Unknown error (exit code %s)" % result
+
+        # Call the reporting script.
+        # The script is expected to be in the 'scripts' directory.
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        script_path = os.path.join(base_dir, 'scripts', 'report_to_jules.py')
+
+        if not os.path.exists(script_path):
+            logger.error("Reporting script not found at %s" % script_path)
+            return
+
+        cmd = [
+            'python3', script_path,
+            '--repo', repo,
+            '--branch', branch,
+            '--error-msg', error_msg,
+            '--space-id', space_id
+        ]
+
+        logger.info("Reporting failure to Jules for repo %s, branch %s" % (repo, branch))
+
+        # We assume GITHUB_TOKEN is available in the environment
+        try:
+            subprocess.run(cmd, check=False)
+        except Exception as e:
+            logger.error("Failed to run reporting script: %s" % e)
