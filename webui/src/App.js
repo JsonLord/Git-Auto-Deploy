@@ -2,6 +2,7 @@ import React, { Component } from 'react';
 import './App.scss';
 import Timeline from './Timeline';
 import Navigation from './Navigation';
+import HuggingFaceStatus from './HuggingFaceStatus';
 
 class App extends Component {
   render() {
@@ -17,6 +18,7 @@ class App extends Component {
     return (
       <div className="App">
         <Navigation />
+        <HuggingFaceStatus />
         <Timeline />
       </div>
     );

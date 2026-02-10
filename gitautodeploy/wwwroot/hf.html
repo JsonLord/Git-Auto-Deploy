@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HF Connection Check</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        pre { background: #eee; padding: 10px; border-radius: 5px; overflow-x: auto; }
+        .error { color: red; }
+        .success { color: green; }
+        button { padding: 10px 20px; cursor: pointer; }
+        .docs { background: #f0f0f0; padding: 15px; margin-bottom: 20px; border-left: 5px solid #3498db; }
+    </style>
+</head>
+<body>
+    <h1>Hugging Face Connection Check</h1>
+
+    <div class="docs">
+        <h3>Documentation: Git-HF-Deployment</h3>
+        <p>This application is modified to work exclusively with Hugging Face Spaces and integrate with the Jules agent for automated fixes.</p>
+        <ul>
+            <li><strong>Hugging Face Deploy:</strong> Pushes updates to HF Spaces and monitors build status.</li>
+            <li><strong>Jules Integration:</strong> On deployment failure, a GitHub issue is created with the <code>jules:run</code> label and build logs. Jules will then fix the code and redeploy.</li>
+            <li><strong>Web UI:</strong> Provides real-time status of webhook events and deployment logs.</li>
+        </ul>
+    </div>
+
+    <button onclick="checkConnection()">Check HF Connection</button>
+    <div id="status"></div>
+
+    <h3>Parameters / Env Vars:</h3>
+    <pre id="env-vars">Click check to load...</pre>
+
+    <h3>Space Metadata:</h3>
+    <pre id="metadata">Click check to load...</pre>
+
+    <h3>Build Logs:</h3>
+    <pre id="build-logs">Click check to load...</pre>
+
+    <h3>Run Logs:</h3>
+    <pre id="run-logs">Click check to load...</pre>
+
+    <script>
+        function checkConnection() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = 'Checking...';
+
+            fetch('/api/hf/check')
+                .then(response => response.json())
+                .then(data => {
+                    statusDiv.innerHTML = '<p><strong>Connection Status:</strong> <span class="' +
+                        (data.hf_connection === 'Success' ? 'success' : 'error') + '">' +
+                        data.hf_connection + '</span></p>' +
+                        '<p><strong>Space ID:</strong> ' + data.space_id + '</p>';
+
+                    document.getElementById('env-vars').textContent = JSON.stringify(data.env_vars, null, 2);
+                    document.getElementById('metadata').textContent = JSON.stringify(data.space_metadata || {}, null, 2);
+                    document.getElementById('build-logs').textContent = data.build_logs || "No logs found";
+                    document.getElementById('run-logs').textContent = data.run_logs || "No logs found";
+                })
+                .catch(error => {
+                    statusDiv.innerHTML = '<p class="error">Error: ' + error + '</p>';
+                });
+        }
+    </script>
+</body>
+</html>

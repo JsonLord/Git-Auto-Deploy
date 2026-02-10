@@ -1,0 +1,40 @@
+.HuggingFaceStatus {
+  margin: 20px;
+  padding: 20px;
+  background: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+
+  .actions {
+    margin-bottom: 20px;
+    button {
+      margin-right: 10px;
+      padding: 10px 15px;
+      cursor: pointer;
+      background-color: #3498db;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      &:hover { background-color: #2980b9; }
+      &:disabled { background-color: #bdc3c7; }
+    }
+  }
+
+  .docs {
+    background: #ecf0f1;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 4px;
+    h3 { margin-top: 0; }
+  }
+
+  .info {
+    pre {
+      background: #eee;
+      padding: 10px;
+      overflow-x: auto;
+    }
+  }
+
+  .error { color: #e74c3c; }
+}

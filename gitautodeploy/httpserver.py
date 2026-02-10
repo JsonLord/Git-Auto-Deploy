@@ -68,6 +68,10 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                 self.handle_status_api()
                 return
 
+            if self.path == "/api/hf/check":
+                self.handle_hf_check_api()
+                return
+
             # Serve static file
             return SimpleHTTPRequestHandler.do_GET(self)
 
@@ -86,7 +90,56 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
             self.send_response(200, 'OK')
             self.send_header('Content-type', 'application/json')
             self.end_headers()
-            self.wfile.write(json.dumps(data).encode('utf-8'))
+
+            def default(obj):
+                if isinstance(obj, bytes):
+                    return obj.decode('utf-8')
+                return str(obj)
+
+            self.wfile.write(json.dumps(data, default=default).encode('utf-8'))
+
+        def handle_hf_check_api(self):
+            import json
+            import os
+            import requests
+
+            token = os.environ.get('HUGGING_FACE_HUB_TOKEN')
+            space_id = os.environ.get('SPACE_ID', 'unknown')
+
+            # Basic env info
+            info = {
+                "space_id": space_id,
+                "env_vars": {k: (v if "TOKEN" not in k and "KEY" not in k and "SECRET" not in k else "***") for k, v in os.environ.items()},
+                "hf_connection": "Unknown"
+            }
+
+            if token:
+                try:
+                    url = f"https://huggingface.co/api/spaces/{space_id}"
+                    headers = {"Authorization": f"Bearer {token}"}
+                    response = requests.get(url, headers=headers, timeout=5)
+                    if response.status_code == 200:
+                        info["hf_connection"] = "Success"
+                        info["space_metadata"] = response.json()
+
+                        # Try to get logs too
+                        build_logs_url = f"https://huggingface.co/api/spaces/{space_id}/logs/build"
+                        run_logs_url = f"https://huggingface.co/api/spaces/{space_id}/logs/run"
+
+                        info["build_logs"] = requests.get(build_logs_url, headers=headers, timeout=5).text[:5000]
+                        info["run_logs"] = requests.get(run_logs_url, headers=headers, timeout=5).text[:5000]
+
+                    else:
+                        info["hf_connection"] = f"Failed ({response.status_code})"
+                except Exception as e:
+                    info["hf_connection"] = f"Error: {str(e)}"
+            else:
+                info["hf_connection"] = "No Token Found"
+
+            self.send_response(200, 'OK')
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(info).encode('utf-8'))
 
         def do_POST(self):
             """Invoked on incoming POST requests"""
@@ -96,7 +149,7 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
             import threading
             try:
                 from urlparse import parse_qs
-            except ModuleNotFoundError:
+            except (ModuleNotFoundError, ImportError):
                 from urllib.parse import parse_qs
 
             logger = logging.getLogger()
@@ -115,8 +168,8 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
             action.log_info('Incoming request from %s:%s' % (self.client_address[0], self.client_address[1]))
 
             # Payloads from GitHub can be delivered as form data. Test the request for this pattern and extract json payload
-            if request_headers['content-type'] == 'application/x-www-form-urlencoded':
-                res = parse_qs(request_body.decode('utf-8'))
+            if 'content-type' in request_headers and request_headers['content-type'] == 'application/x-www-form-urlencoded':
+                res = parse_qs(request_body)
                 if 'payload' in res and len(res['payload']) == 1:
                     request_body = res['payload'][0]
 
