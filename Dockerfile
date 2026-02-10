@@ -17,5 +17,5 @@ COPY --chown=user:user . .
 # HF Spaces default port is 7860
 EXPOSE 7860
 
-# Start GAD
-CMD ["python3", "-m", "gitautodeploy", "--port", "7860", "--host", "0.0.0.0"]
+# Start GAD using the config file
+CMD ["python3", "-m", "gitautodeploy", "--config", "config.json"]

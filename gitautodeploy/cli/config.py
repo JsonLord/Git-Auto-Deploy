@@ -29,7 +29,7 @@ def get_config_defaults():
     # HTTP server options
     config['http-enabled'] = True
     config['http-host'] = '0.0.0.0'
-    config['http-port'] = 8001
+    config['http-port'] = 7860
 
     # HTTPS server options
     config['https-enabled'] = False
@@ -46,12 +46,12 @@ def get_config_defaults():
     config['ssl-cert'] = '~/cert.pem'  # Holds the public key or both the private and public keys
 
     # Web user interface options
-    config['web-ui-enabled'] = False  # Disabled by default until authentication is in place
+    config['web-ui-enabled'] = True
     config['web-ui-username'] = None
     config['web-ui-password'] = None
-    config['web-ui-whitelist'] = ['127.0.0.1']
-    config['web-ui-require-https'] = True
-    config['web-ui-auth-enabled'] = True
+    config['web-ui-whitelist'] = []
+    config['web-ui-require-https'] = False
+    config['web-ui-auth-enabled'] = False
     config['web-ui-prevent-root'] = True
 
     # Record all log levels by default
