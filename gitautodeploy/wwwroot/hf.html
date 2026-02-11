@@ -34,6 +34,16 @@
     <button onclick="checkConnection()">Check HF Connection</button>
     <div id="status"></div>
 
+    <hr>
+
+    <h2>Add New GitHub Repo to HF Space</h2>
+    <p>Enter a GitHub repository URL to automatically create a corresponding Hugging Face Space and start syncing.</p>
+    <input type="text" id="repo-url" placeholder="https://github.com/user/repo" style="width: 300px; padding: 10px;">
+    <button onclick="addRepo()">Add & Deploy to HF</button>
+    <div id="add-status"></div>
+
+    <hr>
+
     <h3>Parameters / Env Vars:</h3>
     <pre id="env-vars">Click check to load...</pre>
 
@@ -67,6 +77,36 @@
                 .catch(error => {
                     statusDiv.innerHTML = '<p class="error">Error: ' + error + '</p>';
                 });
+        }
+
+        function addRepo() {
+            const repoUrl = document.getElementById('repo-url').value;
+            const statusDiv = document.getElementById('add-status');
+
+            if (!repoUrl) {
+                alert('Please enter a GitHub URL');
+                return;
+            }
+
+            statusDiv.innerHTML = 'Processing... This may take a moment to clone and trigger deployment.';
+
+            fetch('/api/repo/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: repoUrl })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    statusDiv.innerHTML = '<p class="success">Success: ' + data.message + '</p>' +
+                        '<p>New Space ID: ' + data.repo_config.huggingface_space + '</p>';
+                } else {
+                    statusDiv.innerHTML = '<p class="error">Failed: ' + data.message + '</p>';
+                }
+            })
+            .catch(error => {
+                statusDiv.innerHTML = '<p class="error">Error: ' + error + '</p>';
+            });
         }
     </script>
 </body>

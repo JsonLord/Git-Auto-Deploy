@@ -72,6 +72,10 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                 self.handle_hf_check_api()
                 return
 
+            if self.path == "/api/repo/add":
+                self.handle_repo_add_api()
+                return
+
             # Serve static file
             return SimpleHTTPRequestHandler.do_GET(self)
 
@@ -140,6 +144,56 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps(info).encode('utf-8'))
+
+        def handle_repo_add_api(self):
+            import json
+            import os
+            from .gitautodeploy import GitAutoDeploy
+
+            content_length = int(self.headers.get('content-length', 0))
+            if content_length == 0:
+                self.send_error(400, "Empty request")
+                return
+
+            request_body = self.rfile.read(content_length).decode('utf-8')
+            try:
+                data = json.loads(request_body)
+                repo_url = data.get('url')
+                if not repo_url:
+                    self.send_error(400, "Missing URL")
+                    return
+
+                # Auto-generate Space ID from URL
+                # e.g. https://github.com/user/repo -> user/repo
+                import re
+                match = re.search(r'github\.com[:/]([^/]+/[^/.]+)(\.git)?', repo_url)
+                if not match:
+                    self.send_error(400, "Invalid GitHub URL")
+                    return
+
+                repo_name = match.group(1)
+                space_id = os.environ.get('HF_USERNAME', 'harvesthealth') + '/' + repo_name.split('/')[-1]
+
+                repo_config = {
+                    'url': repo_url,
+                    'branch': 'main',
+                    'remote': 'origin',
+                    'path': f'/app/repositories/{repo_name.split("/")[-1]}',
+                    'deploy': f'python3 scripts/deploy_to_hf.py --repo-path . --space-id {space_id} --branch main --create',
+                    'huggingface_space': space_id,
+                    'report_to_jules': True
+                }
+
+                success, msg = GitAutoDeploy().add_repository(repo_config)
+
+                response_data = {"success": success, "message": msg, "repo_config": repo_config}
+                self.send_response(200, 'OK')
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(response_data).encode('utf-8'))
+
+            except Exception as e:
+                self.send_error(500, str(e))
 
         def do_POST(self):
             """Invoked on incoming POST requests"""

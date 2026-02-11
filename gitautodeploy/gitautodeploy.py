@@ -286,6 +286,76 @@ class GitAutoDeploy(object):
         #if 'daemon-mode' not in self._config or not self._config['daemon-mode']:
         #    self._startup_event.log_info('Git Auto Deploy started')
 
+    def add_repository(self, repo_config):
+        """Adds a new repository configuration dynamically and syncs it."""
+        import os
+        from .wrappers import GitWrapper
+        from .cli.config import init_config
+
+        if 'repositories' not in self._config:
+            self._config['repositories'] = []
+
+        # Check if already exists
+        for repo in self._config['repositories']:
+            if repo['url'] == repo_config['url']:
+                return False, "Repository already exists"
+
+        self._config['repositories'].append(repo_config)
+
+        # Re-initialize config to apply defaults and create Project objects
+        from .cli.config import init_config
+        init_config(self._config)
+
+        # Clone and init
+        new_project = self._config['repositories'][-1]
+        if not os.path.isdir(new_project['path']):
+            GitWrapper.clone(new_project)
+        else:
+            GitWrapper.init(new_project)
+
+        self.save_config()
+
+        # Trigger initial deploy
+        import threading
+        thread = threading.Thread(target=new_project.execute_webhook, args=[self._event_store])
+        thread.start()
+
+        return True, "Repository added and sync started"
+
+    def save_config(self):
+        """Saves current configuration to config.json."""
+        import json
+        import os
+
+        # Find config file path
+        # For now we assume 'config.json' in current directory or as specified in setup
+        path = 'config.json'
+
+        # Prepare data for saving (Project objects back to dicts)
+        data = dict(self._config)
+        repos = []
+        for repo in data.get('repositories', []):
+            if hasattr(repo, 'store'):
+                repos.append(dict(repo.store))
+            else:
+                repos.append(repo)
+        data['repositories'] = repos
+
+        # Clean up data (remove non-serializable objects)
+        clean_data = {}
+        for k, v in data.items():
+            if isinstance(v, (str, int, float, bool, list, dict, type(None))):
+                clean_data[k] = v
+
+        try:
+            with open(path, 'w') as f:
+                json.dump(clean_data, f, indent=2)
+            return True
+        except Exception as e:
+            import logging
+            logging.getLogger().error(f"Failed to save config: {e}")
+            return False
+
     def serve_http(self, serve_forever=True):
         """Starts a HTTP server that listens for webhook requests and serves the web ui."""
         import sys

@@ -24,6 +24,8 @@ def main():
     parser.add_argument('--space-id', required=True, help='Hugging Face Space ID (e.g., user/space-name)')
     parser.add_argument('--branch', default='main', help='Branch to deploy')
     parser.add_argument('--token', help='Hugging Face API token')
+    parser.add_argument('--create', action='store_true', help='Create the space if it does not exist')
+    parser.add_argument('--sdk', default='static', help='SDK for the new space (if created)')
 
     args = parser.parse_args()
 
@@ -35,6 +37,19 @@ def main():
     api = HfApi(token=token)
 
     try:
+        if args.create:
+            try:
+                api.repo_info(repo_id=args.space_id, repo_type="space")
+                print(f"Space {args.space_id} already exists.")
+            except Exception:
+                print(f"Creating new Space: {args.space_id}")
+                api.create_repo(
+                    repo_id=args.space_id,
+                    repo_type="space",
+                    space_sdk=args.sdk,
+                    private=False
+                )
+
         # Check if README.md exists in repo-path, if not, try to use README.hf.md
         readme_path = os.path.join(args.repo_path, 'README.md')
         if not os.path.exists(readme_path):
