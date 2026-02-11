@@ -177,7 +177,8 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                     return
 
                 repo_name = match.group(1)
-                space_id = os.environ.get('HF_USERNAME', 'harvesthealth') + '/' + repo_name.split('/')[-1]
+                hf_profile = os.environ.get('HF_PROFILE') or os.environ.get('HF_USERNAME') or os.environ.get('SPACE_AUTHOR_NAME', 'harvesthealth')
+                space_id = hf_profile + '/' + repo_name.split('/')[-1]
 
                 # Use absolute path for scripts/deploy_to_hf.py to avoid relative path issues
                 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

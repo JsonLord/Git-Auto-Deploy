@@ -154,12 +154,14 @@ class GitWrapper():
                 cwd=repo_path, capture_output=True, text=True, check=True
             )
             branches = result.stdout.strip().split('\n')
-            if branches:
+            for branch in branches:
+                if not branch or branch == remote or '/HEAD' in branch:
+                    continue
+
                 # Remove remote prefix (e.g. 'origin/')
-                newest = branches[0]
-                if newest.startswith(remote + '/'):
-                    newest = newest[len(remote)+1:]
-                return newest
+                if branch.startswith(remote + '/'):
+                    branch = branch[len(remote)+1:]
+                return branch
         except Exception:
             pass
         return None
