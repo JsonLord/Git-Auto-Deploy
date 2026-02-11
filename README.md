@@ -10,7 +10,7 @@ pinned: false
 [![Build Status](https://travis-ci.org/olipo186/Git-Auto-Deploy.svg?branch=master)](https://travis-ci.org/olipo186/Git-Auto-Deploy)
 # What is it?
 
-Git-Auto-Deploy consists of a small HTTP server that listens for Webhook requests sent from GitHub, GitLab or Bitbucket servers. This application allows you to continuously and automatically deploy your projects each time you push new commits to your repository.</p>
+Git-Auto-Deploy consists of a small HTTP server that listens for Webhook requests sent from GitHub, GitLab or Bitbucket servers. This application has been specialized to **automatically transform GitHub repositories into Hugging Face Spaces**, with integrated error correction via the Jules agent.
 
 ![workflow](https://cloud.githubusercontent.com/assets/1056476/9344294/d3bc32a4-4607-11e5-9a44-5cd9b22e61d9.png)
 
