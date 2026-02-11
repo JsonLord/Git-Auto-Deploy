@@ -18,9 +18,16 @@
         <h3>Documentation: Git-HF-Deployment</h3>
         <p>This application is modified to work exclusively with Hugging Face Spaces and integrate with the Jules agent for automated fixes.</p>
         <ul>
-            <li><strong>Hugging Face Deploy:</strong> Pushes updates to HF Spaces and monitors build status.</li>
-            <li><strong>Jules Integration:</strong> On deployment failure, a GitHub issue is created with the <code>jules:run</code> label and build logs. Jules will then fix the code and redeploy.</li>
-            <li><strong>Web UI:</strong> Provides real-time status of webhook events and deployment logs.</li>
+            <li><strong>Webhook Flow:</strong>
+                <ol>
+                    <li>GitHub sends a <code>push</code> webhook to this server.</li>
+                    <li>This server pulls the latest changes from GitHub.</li>
+                    <li>It then runs <code>scripts/deploy_to_hf.py</code> to sync those changes to Hugging Face Spaces.</li>
+                    <li>The script polls the HF API to monitor build and runtime health.</li>
+                </ol>
+            </li>
+            <li><strong>Jules Auto-Fix:</strong> If the HF deployment fails, a GitHub issue is created with the <code>jules:run</code> label. Jules picks this up, fixes the error, and pushes back to GitHub, triggering a new successful deploy.</li>
+            <li><strong>Web UI:</strong> Monitor real-time webhook events and check connection parameters here.</li>
         </ul>
     </div>
 
