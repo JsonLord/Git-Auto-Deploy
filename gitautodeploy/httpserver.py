@@ -103,7 +103,7 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
             import os
             import requests
 
-            token = os.environ.get('HUGGING_FACE_HUB_TOKEN')
+            token = os.environ.get('HUGGING_FACE_HUB_TOKEN') or os.environ.get('HF_TOKEN')
             space_id = os.environ.get('SPACE_ID', 'unknown')
 
             # Basic env info

@@ -13,9 +13,9 @@ def main():
 
     args = parser.parse_args()
 
-    token = args.token or os.environ.get('GITHUB_TOKEN')
+    token = args.token or os.environ.get('GITHUB_TOKEN') or os.environ.get('GITHUB_API_KEY')
     if not token:
-        print("Error: GitHub token not provided and GITHUB_TOKEN env var not set.")
+        print("Error: GitHub token not provided and GITHUB_TOKEN or GITHUB_API_KEY env var not set.")
         sys.exit(1)
 
     issue_title = f"HF Space deploy failed for branch {args.branch}"
