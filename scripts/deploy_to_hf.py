@@ -50,13 +50,14 @@ def main():
                     private=False
                 )
 
-        # Check if README.md exists in repo-path, if not, try to use README.hf.md
+        # Check if README.md exists in repo-path, if not, try to use the server's README.md as template
         readme_path = os.path.join(args.repo_path, 'README.md')
         if not os.path.exists(readme_path):
-            hf_readme = os.path.join(os.getcwd(), 'README.hf.md')
-            if os.path.exists(hf_readme):
-                print(f"README.md not found in {args.repo_path}. Using README.hf.md as template.")
-                shutil.copy(hf_readme, readme_path)
+            server_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            fallback_readme = os.path.join(server_root, 'README.md')
+            if os.path.exists(fallback_readme):
+                print(f"README.md not found in {args.repo_path}. Using server README.md as template.")
+                shutil.copy(fallback_readme, readme_path)
 
         print(f"Uploading to Hugging Face Space: {args.space_id} from {args.repo_path}")
 

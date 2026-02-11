@@ -36,6 +36,18 @@ def main():
         "Accept": "application/vnd.github.v3+json"
     }
 
+    # 0. Try to ensure issues are enabled
+    try:
+        repo_url = f"https://api.github.com/repos/{args.repo}"
+        repo_resp = requests.get(repo_url, headers=headers, timeout=10)
+        if repo_resp.status_code == 200:
+            repo_info = repo_resp.json()
+            if not repo_info.get('has_issues'):
+                print(f"Issues are disabled for {args.repo}. Attempting to enable them...")
+                requests.patch(repo_url, json={"has_issues": True}, headers=headers, timeout=10)
+    except Exception as e:
+        print(f"Warning: Failed to check/enable issues: {e}")
+
     # 1. Search for existing open issue with the same title and jules:run label
     existing_issue = None
     try:

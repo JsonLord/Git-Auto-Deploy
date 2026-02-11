@@ -179,12 +179,16 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                 repo_name = match.group(1)
                 space_id = os.environ.get('HF_USERNAME', 'harvesthealth') + '/' + repo_name.split('/')[-1]
 
+                # Use absolute path for scripts/deploy_to_hf.py to avoid relative path issues
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                deploy_script = os.path.join(base_dir, 'scripts', 'deploy_to_hf.py')
+
                 repo_config = {
                     'url': repo_url,
                     'branch': 'main',
                     'remote': 'origin',
                     'path': f'/app/repositories/{repo_name.split("/")[-1]}',
-                    'deploy': f'python3 scripts/deploy_to_hf.py --repo-path . --space-id {space_id} --branch %branch% --create',
+                    'deploy': f'python3 {deploy_script} --repo-path . --space-id {space_id} --branch %branch% --create',
                     'huggingface_space': space_id,
                     'report_to_jules': True
                 }
