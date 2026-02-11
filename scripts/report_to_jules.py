@@ -2,7 +2,8 @@ import argparse
 import os
 import requests
 import sys
-from datetime import datetime, timedelta
+import datetime
+from datetime import datetime, timedelta, timezone
 
 def main():
     parser = argparse.ArgumentParser(description='Report failure to Jules via GitHub Issues')
@@ -22,7 +23,7 @@ def main():
     issue_title = f"HF Space deploy failed for branch {args.branch}"
     report_content = f"""
 ### New Deployment Failure Logs:
-**Timestamp:** {datetime.utcnow().isoformat()}
+**Timestamp:** {datetime.now(timezone.utc).isoformat()}
 **Space ID:** {args.space_id}
 **Branch:** {args.branch}
 
@@ -57,8 +58,8 @@ def main():
             issues = resp.json()
             for issue in issues:
                 if issue['title'] == issue_title:
-                    created_at = datetime.strptime(issue['created_at'], "%Y-%m-%dT%H:%M:%SZ")
-                    if datetime.utcnow() - created_at < timedelta(hours=24):
+                    created_at = datetime.strptime(issue['created_at'], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                    if datetime.now(timezone.utc) - created_at < timedelta(hours=24):
                         existing_issue = issue
                         break
     except Exception as e:

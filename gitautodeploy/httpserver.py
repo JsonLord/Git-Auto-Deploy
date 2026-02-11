@@ -177,7 +177,22 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                     return
 
                 repo_name = match.group(1)
-                hf_profile = os.environ.get('HF_PROFILE') or os.environ.get('HF_USERNAME') or os.environ.get('SPACE_AUTHOR_NAME', 'harvesthealth')
+                # Robust profile detection: try various common env vars used in HF Spaces
+                hf_profile = os.environ.get('HF_PROFILE') or \
+                             os.environ.get('HF_Profile') or \
+                             os.environ.get('HF_USERNAME') or \
+                             os.environ.get('HF_USER') or \
+                             os.environ.get('SPACE_AUTHOR_NAME')
+
+                if not hf_profile:
+                    # Fallback to extracting from SPACE_ID if available (e.g. "user/space" -> "user")
+                    space_id_env = os.environ.get('SPACE_ID')
+                    if space_id_env and '/' in space_id_env:
+                        hf_profile = space_id_env.split('/')[0]
+
+                if not hf_profile:
+                    hf_profile = 'harvesthealth'
+
                 space_id = hf_profile + '/' + repo_name.split('/')[-1]
 
                 # Use absolute path for scripts/deploy_to_hf.py to avoid relative path issues
