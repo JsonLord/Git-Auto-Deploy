@@ -5,7 +5,6 @@ except ImportError:
     from collections import MutableMapping
 from ..wrappers import GitWrapper
 from ..lock import Lock
-from ..wrappers import GitWrapper
 from ..events import DeployEvent
 
 

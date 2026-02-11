@@ -30,14 +30,36 @@ def main():
     args = parser.parse_args()
 
     # Prioritize HF_TOKEN as it's common in Spaces
-    token = args.token or os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN')
+    token = args.token or os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN') or os.environ.get('hf_token')
+
     if not token:
-        print("Error: Hugging Face token not provided and HF_TOKEN or HUGGING_FACE_HUB_TOKEN env var not set.")
+        print("Error: Hugging Face token not provided and HF_TOKEN, HUGGING_FACE_HUB_TOKEN, or hf_token env var not set.")
         sys.exit(1)
+
+    # Redact token for logging
+    masked_token = token[:4] + "..." + token[-4:] if len(token) > 8 else "***"
+    print(f"Using Hugging Face token: {masked_token}")
 
     api = HfApi(token=token)
 
     try:
+        # Diagnostic: Who am I?
+        try:
+            user_info = api.whoami()
+            username = user_info.get('name')
+            orgs = [org.get('name') for org in user_info.get('orgs', [])]
+            print(f"Authenticated as: {username}")
+            if orgs:
+                print(f"Member of organizations: {', '.join(orgs)}")
+
+            # Check if we have access to the namespace
+            target_namespace = args.space_id.split('/')[0] if '/' in args.space_id else None
+            if target_namespace and target_namespace != username and target_namespace not in orgs:
+                print(f"Warning: Target namespace '{target_namespace}' is not your username and not in your organizations.")
+                print(f"This might lead to 403 Forbidden errors if you don't have write access.")
+        except Exception as diag_e:
+            print(f"Warning: Could not fetch user info for diagnostics: {diag_e}")
+
         if args.create:
             try:
                 api.repo_info(repo_id=args.space_id, repo_type="space")

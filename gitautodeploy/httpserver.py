@@ -104,34 +104,70 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
             import requests
 
             # Prioritize HF_TOKEN as it's common in Spaces
-            token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN')
+            token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN') or os.environ.get('hf_token')
             space_id = os.environ.get('SPACE_ID', 'unknown')
 
+            # Robust profile detection: try various common env vars used in HF Spaces
+            hf_profile = os.environ.get('HF_PROFILE') or \
+                         os.environ.get('HF_Profile') or \
+                         os.environ.get('HF_USERNAME') or \
+                         os.environ.get('HF_USER') or \
+                         os.environ.get('SPACE_AUTHOR_NAME')
+
+            if not hf_profile and space_id != 'unknown' and '/' in space_id:
+                hf_profile = space_id.split('/')[0]
+
             # Basic env info
+            env_vars = {}
+            for k, v in os.environ.items():
+                if any(secret_key in k.upper() for secret_key in ["TOKEN", "KEY", "SECRET", "PASS", "AUTH"]):
+                    env_vars[k] = "***"
+                else:
+                    env_vars[k] = v
+
             info = {
                 "space_id": space_id,
-                "env_vars": {k: (v if "TOKEN" not in k and "KEY" not in k and "SECRET" not in k else "***") for k, v in os.environ.items()},
-                "hf_connection": "Unknown"
+                "hf_profile_detected": hf_profile,
+                "env_vars": env_vars,
+                "hf_connection": "Unknown",
+                "whoami": None
             }
 
             if token:
                 try:
-                    url = f"https://huggingface.co/api/spaces/{space_id}"
+                    # Use whoami to verify token and get user/org info
+                    whoami_url = "https://huggingface.co/api/whoami-v2"
                     headers = {"Authorization": f"Bearer {token}"}
-                    response = requests.get(url, headers=headers, timeout=5)
-                    if response.status_code == 200:
-                        info["hf_connection"] = "Success"
-                        info["space_metadata"] = response.json()
-
-                        # Try to get logs too
-                        build_logs_url = f"https://huggingface.co/api/spaces/{space_id}/logs/build"
-                        run_logs_url = f"https://huggingface.co/api/spaces/{space_id}/logs/run"
-
-                        info["build_logs"] = requests.get(build_logs_url, headers=headers, timeout=5).text[:5000]
-                        info["run_logs"] = requests.get(run_logs_url, headers=headers, timeout=5).text[:5000]
-
+                    whoami_res = requests.get(whoami_url, headers=headers, timeout=5)
+                    if whoami_res.status_code == 200:
+                        whoami_data = whoami_res.json()
+                        info["whoami"] = {
+                            "name": whoami_data.get("name"),
+                            "fullname": whoami_data.get("fullname"),
+                            "email": whoami_data.get("email"),
+                            "orgs": [org.get("name") for org in whoami_data.get("orgs", [])]
+                        }
+                        info["hf_connection"] = "Authenticated"
                     else:
-                        info["hf_connection"] = f"Failed ({response.status_code})"
+                        info["hf_connection"] = f"Authentication Failed ({whoami_res.status_code})"
+
+                    # Check space metadata if space_id is known
+                    if space_id != 'unknown':
+                        url = f"https://huggingface.co/api/spaces/{space_id}"
+                        response = requests.get(url, headers=headers, timeout=5)
+                        if response.status_code == 200:
+                            info["hf_connection"] = "Authenticated & Space Found"
+                            info["space_metadata"] = response.json()
+
+                            # Try to get logs too
+                            build_logs_url = f"https://huggingface.co/api/spaces/{space_id}/logs/build"
+                            run_logs_url = f"https://huggingface.co/api/spaces/{space_id}/logs/run"
+
+                            info["build_logs"] = requests.get(build_logs_url, headers=headers, timeout=5).text[:5000]
+                            info["run_logs"] = requests.get(run_logs_url, headers=headers, timeout=5).text[:5000]
+                        else:
+                            info["hf_space_status"] = f"Space not found or inaccessible ({response.status_code})"
+
                 except Exception as e:
                     info["hf_connection"] = f"Error: {str(e)}"
             else:
@@ -192,7 +228,21 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                         hf_profile = space_id_env.split('/')[0]
 
                 if not hf_profile:
-                    hf_profile = 'harvesthealth'
+                    # Fallback to current authenticated user from whoami
+                    token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN') or os.environ.get('hf_token')
+                    if token:
+                        try:
+                            whoami_url = "https://huggingface.co/api/whoami-v2"
+                            headers = {"Authorization": f"Bearer {token}"}
+                            whoami_res = requests.get(whoami_url, headers=headers, timeout=5)
+                            if whoami_res.status_code == 200:
+                                hf_profile = whoami_res.json().get('name')
+                        except:
+                            pass
+
+                if not hf_profile:
+                    # Final fallback if everything fails
+                    hf_profile = 'user'
 
                 space_id = hf_profile + '/' + repo_name.split('/')[-1]
 

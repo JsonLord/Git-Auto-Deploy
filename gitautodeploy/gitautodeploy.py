@@ -48,6 +48,9 @@ class GitAutoDeploy(object):
         return cls._instance
 
     def __init__(self):
+        if hasattr(self, '_event_store') and self._event_store:
+            return
+
         from .events import EventStore, StartupEvent
 
         # Setup an event store instance that can keep a global record of events

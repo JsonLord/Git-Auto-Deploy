@@ -64,10 +64,27 @@
             fetch('/api/hf/check')
                 .then(response => response.json())
                 .then(data => {
+                    let whoamiHtml = '';
+                    if (data.whoami) {
+                        whoamiHtml = '<div style="background: #e8f4fd; padding: 10px; margin-top: 10px; border-radius: 5px;">' +
+                            '<strong>Authenticated as:</strong> ' + data.whoami.name + ' (' + data.whoami.fullname + ')<br>' +
+                            '<strong>Email:</strong> ' + data.whoami.email + '<br>' +
+                            '<strong>Organizations:</strong> ' + (data.whoami.orgs.join(', ') || 'None') +
+                            '</div>';
+                    }
+
+                    const isSuccess = data.hf_connection.includes('Authenticated') || data.hf_connection === 'Success';
+
                     statusDiv.innerHTML = '<p><strong>Connection Status:</strong> <span class="' +
-                        (data.hf_connection === 'Success' ? 'success' : 'error') + '">' +
+                        (isSuccess ? 'success' : 'error') + '">' +
                         data.hf_connection + '</span></p>' +
-                        '<p><strong>Space ID:</strong> ' + data.space_id + '</p>';
+                        '<p><strong>Detected HF Profile:</strong> ' + (data.hf_profile_detected || 'None') + '</p>' +
+                        '<p><strong>Current Space ID:</strong> ' + data.space_id + '</p>' +
+                        whoamiHtml;
+
+                    if (data.hf_space_status) {
+                        statusDiv.innerHTML += '<p class="error"><strong>Space Status:</strong> ' + data.hf_space_status + '</p>';
+                    }
 
                     document.getElementById('env-vars').textContent = JSON.stringify(data.env_vars, null, 2);
                     document.getElementById('metadata').textContent = JSON.stringify(data.space_metadata || {}, null, 2);
