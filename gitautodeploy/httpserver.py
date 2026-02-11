@@ -103,7 +103,8 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
             import os
             import requests
 
-            token = os.environ.get('HUGGING_FACE_HUB_TOKEN') or os.environ.get('HF_TOKEN')
+            # Prioritize HF_TOKEN as it's common in Spaces
+            token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN')
             space_id = os.environ.get('SPACE_ID', 'unknown')
 
             # Basic env info
@@ -195,6 +196,9 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
 
                 space_id = hf_profile + '/' + repo_name.split('/')[-1]
 
+                # Determine which token env var to use for the command string
+                hf_token_var = 'HF_TOKEN' if 'HF_TOKEN' in os.environ else 'HUGGING_FACE_HUB_TOKEN'
+
                 # Use absolute path for scripts/deploy_to_hf.py to avoid relative path issues
                 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                 deploy_script = os.path.join(base_dir, 'scripts', 'deploy_to_hf.py')
@@ -204,7 +208,7 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                     'branch': 'main',
                     'remote': 'origin',
                     'path': f'/app/repositories/{repo_name.split("/")[-1]}',
-                    'deploy': f'python3 {deploy_script} --repo-path . --space-id {space_id} --branch %branch% --create',
+                    'deploy': f'python3 {deploy_script} --repo-path . --space-id {space_id} --branch %branch% --create --token ${hf_token_var}',
                     'huggingface_space': space_id,
                     'report_to_jules': True
                 }

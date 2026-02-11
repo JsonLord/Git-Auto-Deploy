@@ -29,9 +29,10 @@ def main():
 
     args = parser.parse_args()
 
-    token = args.token or os.environ.get('HUGGING_FACE_HUB_TOKEN') or os.environ.get('HF_TOKEN')
+    # Prioritize HF_TOKEN as it's common in Spaces
+    token = args.token or os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN')
     if not token:
-        print("Error: Hugging Face token not provided and HUGGING_FACE_HUB_TOKEN or HF_TOKEN env var not set.")
+        print("Error: Hugging Face token not provided and HF_TOKEN or HUGGING_FACE_HUB_TOKEN env var not set.")
         sys.exit(1)
 
     api = HfApi(token=token)
