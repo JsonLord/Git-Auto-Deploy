@@ -25,9 +25,10 @@ class GitWrapper():
         else:
             commands.append('unset GIT_DIR')
 
+        branch = repo_config.get('payload_branch', repo_config['branch'])
         commands.append('git remote set-url ' + repo_config['remote'] + " " + repo_config['url'])
         commands.append('git fetch ' + repo_config['remote'])
-        commands.append('git checkout -f -B ' + repo_config['branch'] + ' -t ' + repo_config['remote'] + '/' + repo_config['branch'])
+        commands.append('git checkout -f -B ' + branch + ' -t ' + repo_config['remote'] + '/' + branch)
         commands.append('git submodule update --init --recursive')
 
         # All commands need to success
@@ -70,11 +71,22 @@ class GitWrapper():
         else:
             commands.append('unset GIT_DIR')
 
+        branch = repo_config.get('payload_branch', repo_config['branch'])
         if "prepull" in repo_config:
             commands.append(repo_config['prepull'])
 
-        commands.append('git fetch ' + repo_config['remote'])
-        commands.append('git reset --hard ' + repo_config['remote'] + "/" + repo_config['branch'])
+        # Fetch first to see new branches
+        res = ProcessWrapper().call('git fetch ' + repo_config['remote'], cwd=repo_config['path'], shell=True)
+
+        # If configured to deploy the newest branch, find it now
+        if repo_config.get('deploy_newest_branch', True):
+            newest = GitWrapper.get_newest_branch(repo_config['path'], repo_config['remote'])
+            if newest:
+                branch = newest
+                repo_config['payload_branch'] = branch
+                logger.info("Newest branch detected: %s" % branch)
+
+        commands.append('git reset --hard ' + repo_config['remote'] + "/" + branch)
         commands.append('git submodule update --init --recursive')
 
         if "postpull" in repo_config:
@@ -97,6 +109,7 @@ class GitWrapper():
 
     @staticmethod
     def clone(repo_config):
+        branch = repo_config.get('payload_branch', repo_config['branch'])
         """Clones the latest version of the repo from the git server"""
         import logging
         from .process import ProcessWrapper
@@ -113,7 +126,7 @@ class GitWrapper():
 
         commands = []
         commands.append('unset GIT_DIR')
-        commands.append('git clone --recursive ' + repo_config['url'] + ' -b ' + repo_config['branch'] + ' ' + repo_config['path'])
+        commands.append('git clone --recursive ' + repo_config['url'] + ' -b ' + branch + ' ' + repo_config['path'])
 
         # All commands need to success
         for command in commands:
@@ -129,6 +142,27 @@ class GitWrapper():
             logger.error("Unable to clone repository %s" % repo_config['url'])
 
         return int(res)
+
+    @staticmethod
+    def get_newest_branch(repo_path, remote='origin'):
+        """Finds the most recently updated branch in the remote."""
+        import subprocess
+        try:
+            # Get all remote branches sorted by committer date
+            result = subprocess.run(
+                ['git', 'for-each-ref', '--sort=-committerdate', 'refs/remotes/' + remote + '/', '--format=%(refname:short)'],
+                cwd=repo_path, capture_output=True, text=True, check=True
+            )
+            branches = result.stdout.strip().split('\n')
+            if branches:
+                # Remove remote prefix (e.g. 'origin/')
+                newest = branches[0]
+                if newest.startswith(remote + '/'):
+                    newest = newest[len(remote)+1:]
+                return newest
+        except Exception:
+            pass
+        return None
 
     @staticmethod
     def deploy(repo_config):
@@ -148,9 +182,12 @@ class GitWrapper():
 
         # Use repository path as default cwd when executing deploy commands
         cwd = (repo_config['path'] if 'path' in repo_config else None)
+        branch = repo_config.get('payload_branch', repo_config['branch'])
 
         res = []
         for cmd in repo_config['deploy_commands']:
+            # Support dynamic branch placeholder
+            cmd = cmd.replace('%branch%', branch)
             res.append(ProcessWrapper().call([cmd], cwd=cwd, shell=True))
 
         logger.info('%s commands executed with status; %s' % (str(len(res)), str(res)))

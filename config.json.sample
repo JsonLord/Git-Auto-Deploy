@@ -17,9 +17,10 @@
       "branch": "main",
       "remote": "origin",
       "path": "/app/repositories/repo-1",
-      "deploy": "python3 scripts/deploy_to_hf.py --repo-path . --space-id your-org/space-1 --branch main",
+      "deploy": "python3 scripts/deploy_to_hf.py --repo-path . --space-id your-org/space-1 --branch %branch%",
       "huggingface_space": "your-org/space-1",
-      "report_to_jules": true
+      "report_to_jules": true,
+      "deploy_newest_branch": true
     },
     {
       "url": "https://github.com/your-org/repo-2.git",

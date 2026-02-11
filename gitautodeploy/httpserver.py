@@ -184,7 +184,7 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                     'branch': 'main',
                     'remote': 'origin',
                     'path': f'/app/repositories/{repo_name.split("/")[-1]}',
-                    'deploy': f'python3 scripts/deploy_to_hf.py --repo-path . --space-id {space_id} --branch main --create',
+                    'deploy': f'python3 scripts/deploy_to_hf.py --repo-path . --space-id {space_id} --branch %branch% --create',
                     'huggingface_space': space_id,
                     'report_to_jules': True
                 }

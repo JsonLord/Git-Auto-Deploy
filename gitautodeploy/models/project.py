@@ -239,7 +239,7 @@ class Project(MutableMapping):
                 logger.warning("Could not identify GitHub repository for reporting to Jules")
                 return
 
-        branch = self.get('branch', 'master')
+        branch = self.get('payload_branch', self.get('branch', 'master'))
         space_id = self.get('huggingface_space', 'unknown')
 
         # Get error message from stderr, or stdout if stderr is empty
