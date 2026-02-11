@@ -72,10 +72,6 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                 self.handle_hf_check_api()
                 return
 
-            if self.path == "/api/repo/add":
-                self.handle_repo_add_api()
-                return
-
             # Serve static file
             return SimpleHTTPRequestHandler.do_GET(self)
 
@@ -152,7 +148,10 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
 
             content_length = int(self.headers.get('content-length', 0))
             if content_length == 0:
-                self.send_error(400, "Empty request")
+                self.send_response(400)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "message": "Empty request"}).encode('utf-8'))
                 return
 
             request_body = self.rfile.read(content_length).decode('utf-8')
@@ -160,7 +159,10 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                 data = json.loads(request_body)
                 repo_url = data.get('url')
                 if not repo_url:
-                    self.send_error(400, "Missing URL")
+                    self.send_response(400)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": False, "message": "Missing URL"}).encode('utf-8'))
                     return
 
                 # Auto-generate Space ID from URL
@@ -168,7 +170,10 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                 import re
                 match = re.search(r'github\.com[:/]([^/]+/[^/.]+)(\.git)?', repo_url)
                 if not match:
-                    self.send_error(400, "Invalid GitHub URL")
+                    self.send_response(400)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": False, "message": "Invalid GitHub URL"}).encode('utf-8'))
                     return
 
                 repo_name = match.group(1)
@@ -193,10 +198,18 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                 self.wfile.write(json.dumps(response_data).encode('utf-8'))
 
             except Exception as e:
-                self.send_error(500, str(e))
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "message": str(e)}).encode('utf-8'))
 
         def do_POST(self):
             """Invoked on incoming POST requests"""
+
+            if self.path == "/api/repo/add":
+                self.handle_repo_add_api()
+                return
+
             from threading import Timer
             import logging
             import json
@@ -208,7 +221,7 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
 
             logger = logging.getLogger()
 
-            content_length = int(self.headers.get('content-length'))
+            content_length = int(self.headers.get('content-length', 0))
             request_body = self.rfile.read(content_length).decode('utf-8')
 
             # Extract request headers and make all keys to lowercase (makes them easier to compare)
