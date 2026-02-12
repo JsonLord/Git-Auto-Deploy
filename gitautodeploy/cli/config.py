@@ -57,6 +57,9 @@ def get_config_defaults():
     # Record all log levels by default
     config['log-level'] = 'NOTSET'
 
+    # GitHub Autonomous Sync (hours, 0 to disable)
+    config['github-sync-interval'] = 0
+
     # Other options
     config['intercept-stdout'] = True
     config['ssh-keyscan'] = False

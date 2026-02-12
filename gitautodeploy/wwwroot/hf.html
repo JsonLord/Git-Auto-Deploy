@@ -36,6 +36,13 @@
 
     <hr>
 
+    <h2>Autonomous Onboarding</h2>
+    <p>Automatically discover and deploy all repositories from your connected GitHub account.</p>
+    <button onclick="syncAllRepos()" style="background-color: #27ae60; color: white; border: none; font-weight: bold;">Sync All GitHub Repositories</button>
+    <div id="sync-status"></div>
+
+    <hr>
+
     <h2>Add New GitHub Repo to HF Space</h2>
     <p>Enter a GitHub repository URL to automatically create a corresponding Hugging Face Space and start syncing.</p>
     <input type="text" id="repo-url" placeholder="https://github.com/user/repo" style="width: 300px; padding: 10px;">
@@ -90,6 +97,24 @@
                     document.getElementById('metadata').textContent = JSON.stringify(data.space_metadata || {}, null, 2);
                     document.getElementById('build-logs').textContent = data.build_logs || "No logs found";
                     document.getElementById('run-logs').textContent = data.run_logs || "No logs found";
+                })
+                .catch(error => {
+                    statusDiv.innerHTML = '<p class="error">Error: ' + error + '</p>';
+                });
+        }
+
+        function syncAllRepos() {
+            const statusDiv = document.getElementById('sync-status');
+            statusDiv.innerHTML = 'Requesting sync...';
+
+            fetch('/api/github/sync')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        statusDiv.innerHTML = '<p class="success">Success: ' + data.message + '. Discovery is running in the background. Check logs for progress.</p>';
+                    } else {
+                        statusDiv.innerHTML = '<p class="error">Failed: ' + data.message + '</p>';
+                    }
                 })
                 .catch(error => {
                     statusDiv.innerHTML = '<p class="error">Error: ' + error + '</p>';

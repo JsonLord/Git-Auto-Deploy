@@ -289,6 +289,27 @@ class GitAutoDeploy(object):
         #if 'daemon-mode' not in self._config or not self._config['daemon-mode']:
         #    self._startup_event.log_info('Git Auto Deploy started')
 
+        # Start periodic sync if configured
+        if self._config.get('github-sync-interval', 0) > 0:
+            self.schedule_github_sync(first_run=True)
+
+    def schedule_github_sync(self, first_run=False):
+        """Schedules the next GitHub repository sync."""
+        import threading
+        interval_hours = self._config.get('github-sync-interval', 0)
+        if interval_hours <= 0:
+            return
+
+        def timed_sync():
+            self.sync_github_repos()
+            self.schedule_github_sync()
+
+        delay = 30 if first_run else (interval_hours * 3600)
+
+        timer = threading.Timer(delay, timed_sync)
+        timer.daemon = True
+        timer.start()
+
     def add_repository(self, repo_config):
         """Adds a new repository configuration dynamically and syncs it."""
         import os
@@ -324,6 +345,39 @@ class GitAutoDeploy(object):
         thread.start()
 
         return True, "Repository added and sync started"
+
+    def sync_github_repos(self):
+        """Discovers and registers all repositories from the connected GitHub account."""
+        import os
+        import subprocess
+        import logging
+        logger = logging.getLogger()
+
+        token = os.environ.get('GITHUB_API_KEY') or os.environ.get('GITHUB_TOKEN')
+        if not token:
+            return False, "GitHub token not found in environment"
+
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script_path = os.path.join(base_dir, 'scripts', 'sync_all_repos.py')
+
+        # We call it via subprocess to keep it decoupled and reuse the script logic
+        # We use http://0.0.0.0:{port} to reach the local server
+        port = self._config.get('http-port', 7860)
+        cmd = ['python3', script_path, '--gad-url', f'http://127.0.0.1:{port}', '--token', token]
+
+        logger.info("Starting autonomous GitHub repository sync...")
+        try:
+            # Run in background or wait? Since it might take a while, maybe run in thread.
+            import threading
+            def run_sync():
+                subprocess.run(cmd, check=False)
+
+            thread = threading.Thread(target=run_sync)
+            thread.start()
+            return True, "Sync started in background"
+        except Exception as e:
+            logger.error(f"Failed to start sync: {e}")
+            return False, str(e)
 
     def save_config(self):
         """Saves current configuration to config.json."""

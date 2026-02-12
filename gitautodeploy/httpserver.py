@@ -68,6 +68,10 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                 self.handle_status_api()
                 return
 
+            if self.path == "/api/github/sync":
+                self.handle_github_sync_api()
+                return
+
             if self.path == "/api/hf/check":
                 self.handle_hf_check_api()
                 return
@@ -97,6 +101,17 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                 return str(obj)
 
             self.wfile.write(json.dumps(data, default=default).encode('utf-8'))
+
+        def handle_github_sync_api(self):
+            import json
+            from .gitautodeploy import GitAutoDeploy
+
+            success, msg = GitAutoDeploy().sync_github_repos()
+
+            self.send_response(200, 'OK')
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success, "message": msg}).encode('utf-8'))
 
         def handle_hf_check_api(self):
             import json
