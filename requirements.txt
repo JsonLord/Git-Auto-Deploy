@@ -2,3 +2,7 @@ setuptools>=20.3.1
 lockfile>=0.12.2
 huggingface_hub>=0.20.0
 requests>=2.25.1
+deepagents>=0.4.1
+langchain-openai>=0.1.0
+langchain-community>=0.0.10
+gradio_client>=0.10.0

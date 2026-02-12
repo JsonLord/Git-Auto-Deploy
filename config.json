@@ -16,7 +16,7 @@
       "branch": "master",
       "remote": "origin",
       "path": "/app/repositories/git-auto-deploy",
-      "deploy": "python3 scripts/deploy_to_hf.py --repo-path . --space-id harvesthealth/magnetic-ui --branch master",
+      "deploy": "python3 scripts/agentic_deploy.py --repo-path . --space-id harvesthealth/magnetic-ui --branch master --github-repo JsonLord/Git-Auto-Deploy",
       "huggingface_space": "harvesthealth/magnetic-ui",
       "report_to_jules": true
     }
