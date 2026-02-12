@@ -260,6 +260,9 @@ class GitAutoDeploy(object):
         # Clone all repos once initially
         self.clone_all_repos()
 
+        # Ensure HF Spaces exist for configured repos
+        self.ensure_hf_spaces()
+
         # Set default stdout and stderr to our logging interface (that writes
         # to file and console depending on user preference)
         if 'intercept-stdout' in self._config and self._config['intercept-stdout']:
@@ -293,6 +296,34 @@ class GitAutoDeploy(object):
         if self._config.get('github-sync-interval', 0) > 0:
             self.schedule_github_sync(first_run=True)
 
+    def ensure_hf_spaces(self):
+        """Iterates over all configured repositories and ensures their HF Spaces exist."""
+        import os
+        import logging
+        from huggingface_hub import HfApi
+        logger = logging.getLogger()
+
+        token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN') or os.environ.get('hf_token')
+        if not token:
+            return
+
+        api = HfApi(token=token)
+
+        for repo in self._config['repositories']:
+            space_id = repo.get('huggingface_space')
+            if not space_id:
+                continue
+
+            try:
+                api.repo_info(repo_id=space_id, repo_type="space")
+                logger.debug(f"HF Space {space_id} already exists")
+            except Exception:
+                logger.info(f"HF Space {space_id} does not exist. Triggering initial creation/deploy.")
+                # We trigger the webhook execution which includes the deploy command (with --create)
+                import threading
+                thread = threading.Thread(target=repo.execute_webhook, args=[self._event_store])
+                thread.start()
+
     def schedule_github_sync(self, first_run=False):
         """Schedules the next GitHub repository sync."""
         import threading
@@ -310,7 +341,82 @@ class GitAutoDeploy(object):
         timer.daemon = True
         timer.start()
 
-    def add_repository(self, repo_config):
+    def inject_github_actions(self, repo_config):
+        """Injects HF sync and size check GitHub Actions into the repository."""
+        import os
+        import subprocess
+        import logging
+        logger = logging.getLogger()
+
+        path = repo_config['path']
+        if not os.path.isdir(path):
+            return False, "Repository path does not exist"
+
+        workflow_dir = os.path.join(path, '.github', 'workflows')
+        os.makedirs(workflow_dir, exist_ok=True)
+
+        # 1. Sync to HF workflow
+        sync_workflow_path = os.path.join(workflow_dir, 'sync_to_hf.yml')
+
+        # Extract HF user and space name
+        space_id = repo_config.get('huggingface_space', 'user/repo')
+        hf_user = space_id.split('/')[0] if '/' in space_id else 'user'
+        space_name = space_id.split('/')[-1] if '/' in space_id else 'repo'
+        branch = repo_config.get('branch', 'main')
+
+        sync_content = f"""name: Sync to Hugging Face hub
+on:
+  push:
+    branches: [{branch}]
+  workflow_dispatch:
+
+jobs:
+  sync-to-hub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          lfs: true
+      - name: Push to hub
+        env:
+          HF_TOKEN: ${{{{ secrets.HF_TOKEN }}}}
+        run: git push https://{hf_user}:${{{{ env.HF_TOKEN }}}}@huggingface.co/spaces/{hf_user}/{space_name} {branch}
+"""
+        with open(sync_workflow_path, 'w') as f:
+            f.write(sync_content)
+
+        # 2. Check file size workflow
+        check_workflow_path = os.path.join(workflow_dir, 'check_size.yml')
+        check_content = f"""name: Check file size
+on:
+  pull_request:
+    branches: [{branch}]
+  workflow_dispatch:
+
+jobs:
+  check-size:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check large files
+        uses: ActionsDesk/lfs-warning@v2.0
+        with:
+          filesizelimit: 10485760 # 10MB
+"""
+        with open(check_workflow_path, 'w') as f:
+            f.write(check_content)
+
+        # Push back to GitHub if enabled
+        try:
+            subprocess.run(['git', 'add', '.github/workflows/'], cwd=path, check=True)
+            subprocess.run(['git', 'commit', '-m', 'Add Hugging Face sync and size check workflows'], cwd=path, check=True)
+            subprocess.run(['git', 'push', repo_config['remote'], branch], cwd=path, check=True)
+            return True, "Workflows injected and pushed to GitHub"
+        except Exception as e:
+            logger.warning(f"Failed to push injected workflows: {e}")
+            return True, "Workflows created locally but failed to push (permission issue?)"
+
+    def add_repository(self, repo_config, inject_actions=False):
         """Adds a new repository configuration dynamically and syncs it."""
         import os
         from .wrappers import GitWrapper
@@ -336,6 +442,9 @@ class GitAutoDeploy(object):
             GitWrapper.clone(new_project)
         else:
             GitWrapper.init(new_project)
+
+        if inject_actions:
+            self.inject_github_actions(new_project)
 
         self.save_config()
 

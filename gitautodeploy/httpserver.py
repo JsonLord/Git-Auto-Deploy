@@ -210,6 +210,7 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
             try:
                 data = json.loads(request_body)
                 repo_url = data.get('url')
+                inject_actions = data.get('inject_actions', False)
                 if not repo_url:
                     self.send_response(400)
                     self.send_header('Content-type', 'application/json')
@@ -278,7 +279,7 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                     'report_to_jules': True
                 }
 
-                success, msg = GitAutoDeploy().add_repository(repo_config)
+                success, msg = GitAutoDeploy().add_repository(repo_config, inject_actions=inject_actions)
 
                 response_data = {"success": success, "message": msg, "repo_config": repo_config}
                 self.send_response(200, 'OK')

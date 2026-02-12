@@ -18,6 +18,26 @@ def get_hf_logs(space_id, token, log_type="build"):
     except Exception as e:
         return f"Error fetching {log_type} logs: {e}"
 
+def check_file_sizes(repo_path, limit_mb=10):
+    limit_bytes = limit_mb * 1024 * 1024
+    large_files = []
+
+    for root, dirs, files in os.walk(repo_path):
+        if '.git' in dirs:
+            dirs.remove('.git')
+
+        for name in files:
+            filepath = os.path.join(root, name)
+            try:
+                size = os.path.getsize(filepath)
+                if size > limit_bytes:
+                    rel_path = os.path.relpath(filepath, repo_path)
+                    large_files.append((rel_path, size))
+            except OSError:
+                continue
+
+    return large_files
+
 def main():
     parser = argparse.ArgumentParser(description='Deploy to Hugging Face Spaces')
     parser.add_argument('--repo-path', required=True, help='Path to the local repository')
@@ -43,6 +63,20 @@ def main():
     api = HfApi(token=token)
 
     try:
+        # Check for large files (> 10MB) as required by HF Spaces without LFS
+        print(f"Checking for files larger than 10MB in {args.repo_path}...")
+        large_files = check_file_sizes(args.repo_path)
+        if large_files:
+            print("ERROR: Deployment aborted. The following files exceed the 10MB limit:")
+            for path, size in large_files:
+                print(f"  - {path} ({size / (1024*1024):.2f} MB)")
+            print("\nHugging Face Spaces requires Git LFS for files larger than 10MB.")
+            print("Please either:")
+            print("  1. Use Git LFS to track these files.")
+            print("  2. Reduce the file size.")
+            print("  3. Remove the large files.")
+            sys.exit(4) # Specific exit code for large file error
+
         # Diagnostic: Who am I?
         try:
             user_info = api.whoami()
@@ -60,6 +94,12 @@ def main():
         except Exception as diag_e:
             print(f"Warning: Could not fetch user info for diagnostics: {diag_e}")
 
+        # Detect SDK
+        sdk = args.sdk
+        if os.path.exists(os.path.join(args.repo_path, 'Dockerfile')):
+            sdk = 'docker'
+            print(f"Dockerfile detected. Using 'docker' SDK.")
+
         if args.create:
             try:
                 api.repo_info(repo_id=args.space_id, repo_type="space")
@@ -69,18 +109,33 @@ def main():
                 api.create_repo(
                     repo_id=args.space_id,
                     repo_type="space",
-                    space_sdk=args.sdk,
+                    space_sdk=sdk,
                     private=False
                 )
 
-        # Check if README.md exists in repo-path, if not, try to use the server's README.md as template
+        # Check if README.md exists in repo-path
         readme_path = os.path.join(args.repo_path, 'README.md')
-        if not os.path.exists(readme_path):
-            server_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            fallback_readme = os.path.join(server_root, 'README.md')
-            if os.path.exists(fallback_readme):
-                print(f"README.md not found in {args.repo_path}. Using server README.md as template.")
-                shutil.copy(fallback_readme, readme_path)
+        content = ""
+        if os.path.exists(readme_path):
+            with open(readme_path, 'r') as f:
+                content = f.read()
+
+        # If README is missing or doesn't have metadata, inject it
+        if not content.strip().startswith('---'):
+            print(f"Injecting Hugging Face Space metadata into README.md")
+            title = args.space_id.split('/')[-1].replace('-', ' ').title()
+            metadata = f"---\ntitle: {title}\nemoji: 🚀\ncolorFrom: blue\ncolorTo: green\nsdk: {sdk}\npinned: false\n---\n\n"
+
+            # If no README at all, use server README as base if available
+            if not content:
+                server_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                fallback_readme = os.path.join(server_root, 'README.md')
+                if os.path.exists(fallback_readme):
+                    with open(fallback_readme, 'r') as f:
+                        content = f.read()
+
+            with open(readme_path, 'w') as f:
+                f.write(metadata + content)
 
         print(f"Uploading to Hugging Face Space: {args.space_id} from {args.repo_path}")
 

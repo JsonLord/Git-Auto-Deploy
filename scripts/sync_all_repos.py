@@ -37,6 +37,7 @@ def main():
     parser.add_argument('--gad-url', default='http://localhost:7860', help='URL of the GAD server')
     parser.add_argument('--token', help='GitHub API token')
     parser.add_argument('--limit', type=int, default=100, help='Maximum number of repos to sync')
+    parser.add_argument('--inject-actions', action='store_true', help='Inject GitHub Actions for automatic sync')
 
     args = parser.parse_args()
 
@@ -60,7 +61,10 @@ def main():
             # Call GAD API
             resp = requests.post(
                 f"{args.gad_url}/api/repo/add",
-                json={"url": repo_url},
+                json={
+                    "url": repo_url,
+                    "inject_actions": args.inject_actions
+                },
                 timeout=30
             )
 

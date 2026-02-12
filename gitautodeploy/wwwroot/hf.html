@@ -46,6 +46,11 @@
     <h2>Add New GitHub Repo to HF Space</h2>
     <p>Enter a GitHub repository URL to automatically create a corresponding Hugging Face Space and start syncing.</p>
     <input type="text" id="repo-url" placeholder="https://github.com/user/repo" style="width: 300px; padding: 10px;">
+    <div style="margin: 10px 0;">
+        <label>
+            <input type="checkbox" id="inject-actions"> Inject GitHub Actions for automatic sync (requires push access)
+        </label>
+    </div>
     <button onclick="addRepo()">Add & Deploy to HF</button>
     <div id="add-status"></div>
 
@@ -123,6 +128,7 @@
 
         function addRepo() {
             const repoUrl = document.getElementById('repo-url').value;
+            const injectActions = document.getElementById('inject-actions').checked;
             const statusDiv = document.getElementById('add-status');
 
             if (!repoUrl) {
@@ -135,7 +141,10 @@
             fetch('/api/repo/add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: repoUrl })
+                body: JSON.stringify({
+                    url: repoUrl,
+                    inject_actions: injectActions
+                })
             })
             .then(response => response.json())
             .then(data => {
