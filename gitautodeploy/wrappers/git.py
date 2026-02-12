@@ -9,7 +9,7 @@ class GitWrapper():
     def init(repo_config):
         """Init remote url of the repo from the git server"""
         import logging
-        from .process import ProcessWrapper
+        from .process import ProcessWrapper, scrub_tokens
         import os
         import platform
 
@@ -36,7 +36,8 @@ class GitWrapper():
             res = ProcessWrapper().call(command, cwd=repo_config['path'], shell=True, supressStderr=True)
 
             if res != 0:
-                logger.error("Command '%s' failed with exit code %s" % (command, res))
+                safe_command = scrub_tokens(command)
+                logger.error("Command '%s' failed with exit code %s" % (safe_command, res))
                 break
 
         if res == 0 and os.path.isdir(repo_config['path']):
@@ -50,7 +51,7 @@ class GitWrapper():
     def pull(repo_config):
         """Pulls the latest version of the repo from the git server"""
         import logging
-        from .process import ProcessWrapper
+        from .process import ProcessWrapper, scrub_tokens
         import os
         import platform
 
@@ -97,7 +98,8 @@ class GitWrapper():
             res = ProcessWrapper().call(command, cwd=repo_config['path'], shell=True, supressStderr=True)
 
             if res != 0:
-                logger.error("Command '%s' failed with exit code %s" % (command, res))
+                safe_command = scrub_tokens(command)
+                logger.error("Command '%s' failed with exit code %s" % (safe_command, res))
                 break
 
         if res == 0 and os.path.isdir(repo_config['path']):

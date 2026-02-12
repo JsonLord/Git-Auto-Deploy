@@ -2,7 +2,29 @@ import argparse
 import os
 import requests
 import sys
+import re
 from datetime import datetime, timedelta, timezone
+
+def scrub_tokens(text):
+    if not isinstance(text, str):
+        return text
+
+    # Patterns for common tokens
+    patterns = [
+        (r'hf_[a-zA-Z0-9]{20,}', '[HF_TOKEN_REDACTED]'),
+        (r'ghp_[a-zA-Z0-9]{20,}', '[GH_TOKEN_REDACTED]'),
+        (r'github_pat_[a-zA-Z0-9_]{20,}', '[GH_PAT_REDACTED]'),
+        (r'sk-[a-zA-Z0-9]{30,}', '[OPENAI_TOKEN_REDACTED]'),
+        (r'glpat-[a-zA-Z0-9\-]{20,}', '[GITLAB_TOKEN_REDACTED]'),
+        # Generic credential in URL
+        (r'https?://[^:\s]+:[^@\s]+@', 'https://[CREDENTIALS_REDACTED]@')
+    ]
+
+    scrubbed = text
+    for pattern, replacement in patterns:
+        scrubbed = re.sub(pattern, replacement, scrubbed)
+
+    return scrubbed
 
 def main():
     parser = argparse.ArgumentParser(description='Report failure to Jules via GitHub Issues')
@@ -20,6 +42,10 @@ def main():
         sys.exit(1)
 
     issue_title = f"HF Space deploy failed for branch {args.branch}"
+
+    # Scrub tokens from error message
+    safe_error_msg = scrub_tokens(args.error_msg)
+
     report_content = f"""
 ### New Deployment Failure Logs:
 **Timestamp:** {datetime.now(timezone.utc).isoformat()}
@@ -27,7 +53,7 @@ def main():
 **Branch:** {args.branch}
 
 ```
-{args.error_msg}
+{safe_error_msg}
 ```
 """
 
