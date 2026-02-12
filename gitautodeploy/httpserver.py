@@ -249,21 +249,17 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                     return
 
                 repo_name = match.group(1)
-                # Robust profile detection: try various common env vars used in HF Spaces
+
+                # Check for explicit profile override
                 hf_profile = os.environ.get('HF_PROFILE') or \
                              os.environ.get('HF_Profile') or \
                              os.environ.get('HF_USERNAME') or \
-                             os.environ.get('HF_USER') or \
-                             os.environ.get('SPACE_AUTHOR_NAME')
+                             os.environ.get('HF_USER')
 
-                if not hf_profile:
-                    # Fallback to extracting from SPACE_ID if available (e.g. "user/space" -> "user")
-                    space_id_env = os.environ.get('SPACE_ID')
-                    if space_id_env and '/' in space_id_env:
-                        hf_profile = space_id_env.split('/')[0]
-
-                # Use whoami to ensure we have the correct case for the profile
+                # Use whoami to determine the identity of the token
                 token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN') or os.environ.get('hf_token')
+                hf_user = None
+                hf_orgs = []
                 if token:
                     try:
                         whoami_url = "https://huggingface.co/api/whoami-v2"
@@ -273,21 +269,32 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                             whoami_data = whoami_res.json()
                             hf_user = whoami_data.get('name')
                             hf_orgs = [org.get('name') for org in whoami_data.get('orgs', [])]
-
-                            # If no profile set, use the identified username
-                            if not hf_profile:
-                                hf_profile = hf_user
-                            # If profile matches username case-insensitively, use the correct case from whoami
-                            elif hf_profile.lower() == hf_user.lower():
-                                hf_profile = hf_user
-                            # If profile matches an org case-insensitively, use the correct case from whoami
-                            else:
-                                for org in hf_orgs:
-                                    if hf_profile.lower() == org.lower():
-                                        hf_profile = org
-                                        break
                     except:
                         pass
+
+                # Logic for profile detection:
+                # 1. Explicit environment variable (HF_PROFILE etc)
+                # 2. Token owner (hf_user)
+                # 3. Host Space owner (from SPACE_ID)
+
+                if not hf_profile:
+                    if hf_user:
+                        hf_profile = hf_user
+                    else:
+                        # Fallback to host space owner
+                        space_id_env = os.environ.get('SPACE_ID')
+                        if space_id_env and '/' in space_id_env:
+                            hf_profile = space_id_env.split('/')[0]
+
+                # Correct case if we have whoami info
+                if hf_user:
+                    if hf_profile.lower() == hf_user.lower():
+                        hf_profile = hf_user
+                    else:
+                        for org in hf_orgs:
+                            if hf_profile.lower() == org.lower():
+                                hf_profile = org
+                                break
 
                 if not hf_profile:
                     # Final fallback if everything fails

@@ -7,6 +7,7 @@
         pre { background: #eee; padding: 10px; border-radius: 5px; overflow-x: auto; }
         .error { color: red; }
         .success { color: green; }
+        .waiting { color: #f39c12; }
         button { padding: 10px 20px; cursor: pointer; }
         .docs { background: #f0f0f0; padding: 15px; margin-bottom: 20px; border-left: 5px solid #3498db; }
     </style>
@@ -53,6 +54,13 @@
     </div>
     <button onclick="addRepo()">Add & Deploy to HF</button>
     <div id="add-status"></div>
+
+    <hr>
+
+    <h2>Update Summary</h2>
+    <div id="events-container" style="max-height: 400px; overflow-y: auto; background: #fafafa; border: 1px solid #ddd; padding: 10px; border-radius: 5px;">
+        <p>No active updates. Add a repository or push changes to GitHub to see progress here.</p>
+    </div>
 
     <hr>
 
@@ -151,6 +159,8 @@
                 if (data.success) {
                     statusDiv.innerHTML = '<p class="success">Success: ' + data.message + '</p>' +
                         '<p>New Space ID: ' + data.repo_config.huggingface_space + '</p>';
+                    // Start polling immediately after adding
+                    pollStatus();
                 } else {
                     statusDiv.innerHTML = '<p class="error">Failed: ' + data.message + '</p>';
                 }
@@ -159,6 +169,38 @@
                 statusDiv.innerHTML = '<p class="error">Error: ' + error + '</p>';
             });
         }
+
+        function pollStatus() {
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('events-container');
+                    if (data.events && data.events.length > 0) {
+                        let html = '';
+                        // Reverse to show newest at the top
+                        [...data.events].reverse().forEach(event => {
+                            const statusClass = event.waiting ? 'waiting' : (event.success ? 'success' : 'error');
+                            const statusLabel = event.waiting ? 'IN PROGRESS' : (event.success ? 'SUCCESS' : 'FAILED');
+
+                            html += '<div style="border-bottom: 1px solid #eee; padding: 10px; margin-bottom: 10px;">' +
+                                '<div style="display: flex; justify-content: space-between;">' +
+                                '<strong>' + (event.name || event.type) + '</strong>' +
+                                '<span class="' + statusClass + '" style="font-weight: bold;">' + statusLabel + '</span>' +
+                                '</div>' +
+                                '<div style="font-size: 0.9em; color: #666; margin-top: 5px;">' +
+                                event.messages.map(m => '<div>- ' + m + '</div>').join('') +
+                                '</div>' +
+                                '</div>';
+                        });
+                        container.innerHTML = html;
+                    }
+                })
+                .catch(console.error);
+        }
+
+        // Poll every 5 seconds
+        setInterval(pollStatus, 5000);
+        pollStatus(); // Initial call
     </script>
 </body>
 </html>
