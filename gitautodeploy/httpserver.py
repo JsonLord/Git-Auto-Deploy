@@ -132,6 +132,30 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
             if not hf_profile and space_id != 'unknown' and '/' in space_id:
                 hf_profile = space_id.split('/')[0]
 
+            whoami_data = None
+            if token:
+                try:
+                    whoami_url = "https://huggingface.co/api/whoami-v2"
+                    headers = {"Authorization": f"Bearer {token}"}
+                    whoami_res = requests.get(whoami_url, headers=headers, timeout=5)
+                    if whoami_res.status_code == 200:
+                        whoami_data = whoami_res.json()
+                        hf_user = whoami_data.get('name')
+                        hf_orgs = [org.get('name') for org in whoami_data.get('orgs', [])]
+
+                        # Correct hf_profile case using whoami data
+                        if not hf_profile:
+                            hf_profile = hf_user
+                        elif hf_profile.lower() == hf_user.lower():
+                            hf_profile = hf_user
+                        else:
+                            for org in hf_orgs:
+                                if hf_profile.lower() == org.lower():
+                                    hf_profile = org
+                                    break
+                except:
+                    pass
+
             # Basic env info
             env_vars = {}
             for k, v in os.environ.items():
@@ -149,42 +173,37 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
             }
 
             if token:
-                try:
-                    # Use whoami to verify token and get user/org info
-                    whoami_url = "https://huggingface.co/api/whoami-v2"
-                    headers = {"Authorization": f"Bearer {token}"}
-                    whoami_res = requests.get(whoami_url, headers=headers, timeout=5)
-                    if whoami_res.status_code == 200:
-                        whoami_data = whoami_res.json()
-                        info["whoami"] = {
-                            "name": whoami_data.get("name"),
-                            "fullname": whoami_data.get("fullname"),
-                            "email": whoami_data.get("email"),
-                            "orgs": [org.get("name") for org in whoami_data.get("orgs", [])]
-                        }
-                        info["hf_connection"] = "Authenticated"
-                    else:
-                        info["hf_connection"] = f"Authentication Failed ({whoami_res.status_code})"
+                if whoami_data:
+                    info["whoami"] = {
+                        "name": whoami_data.get("name"),
+                        "fullname": whoami_data.get("fullname"),
+                        "email": whoami_data.get("email"),
+                        "orgs": [org.get("name") for org in whoami_data.get("orgs", [])]
+                    }
+                    info["hf_connection"] = "Authenticated"
 
                     # Check space metadata if space_id is known
                     if space_id != 'unknown':
-                        url = f"https://huggingface.co/api/spaces/{space_id}"
-                        response = requests.get(url, headers=headers, timeout=5)
-                        if response.status_code == 200:
-                            info["hf_connection"] = "Authenticated & Space Found"
-                            info["space_metadata"] = response.json()
+                        try:
+                            headers = {"Authorization": f"Bearer {token}"}
+                            url = f"https://huggingface.co/api/spaces/{space_id}"
+                            response = requests.get(url, headers=headers, timeout=5)
+                            if response.status_code == 200:
+                                info["hf_connection"] = "Authenticated & Space Found"
+                                info["space_metadata"] = response.json()
 
-                            # Try to get logs too
-                            build_logs_url = f"https://huggingface.co/api/spaces/{space_id}/logs/build"
-                            run_logs_url = f"https://huggingface.co/api/spaces/{space_id}/logs/run"
+                                # Try to get logs too
+                                build_logs_url = f"https://huggingface.co/api/spaces/{space_id}/logs/build"
+                                run_logs_url = f"https://huggingface.co/api/spaces/{space_id}/logs/run"
 
-                            info["build_logs"] = requests.get(build_logs_url, headers=headers, timeout=5).text[:5000]
-                            info["run_logs"] = requests.get(run_logs_url, headers=headers, timeout=5).text[:5000]
-                        else:
-                            info["hf_space_status"] = f"Space not found or inaccessible ({response.status_code})"
-
-                except Exception as e:
-                    info["hf_connection"] = f"Error: {str(e)}"
+                                info["build_logs"] = requests.get(build_logs_url, headers=headers, timeout=5).text[:5000]
+                                info["run_logs"] = requests.get(run_logs_url, headers=headers, timeout=5).text[:5000]
+                            else:
+                                info["hf_space_status"] = f"Space not found or inaccessible ({response.status_code})"
+                        except Exception as e:
+                            info["hf_space_status"] = f"Error fetching space info: {str(e)}"
+                else:
+                    info["hf_connection"] = "Authentication Failed or Token Invalid"
             else:
                 info["hf_connection"] = "No Token Found"
 
@@ -243,18 +262,32 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                     if space_id_env and '/' in space_id_env:
                         hf_profile = space_id_env.split('/')[0]
 
-                if not hf_profile:
-                    # Fallback to current authenticated user from whoami
-                    token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN') or os.environ.get('hf_token')
-                    if token:
-                        try:
-                            whoami_url = "https://huggingface.co/api/whoami-v2"
-                            headers = {"Authorization": f"Bearer {token}"}
-                            whoami_res = requests.get(whoami_url, headers=headers, timeout=5)
-                            if whoami_res.status_code == 200:
-                                hf_profile = whoami_res.json().get('name')
-                        except:
-                            pass
+                # Use whoami to ensure we have the correct case for the profile
+                token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN') or os.environ.get('hf_token')
+                if token:
+                    try:
+                        whoami_url = "https://huggingface.co/api/whoami-v2"
+                        headers = {"Authorization": f"Bearer {token}"}
+                        whoami_res = requests.get(whoami_url, headers=headers, timeout=5)
+                        if whoami_res.status_code == 200:
+                            whoami_data = whoami_res.json()
+                            hf_user = whoami_data.get('name')
+                            hf_orgs = [org.get('name') for org in whoami_data.get('orgs', [])]
+
+                            # If no profile set, use the identified username
+                            if not hf_profile:
+                                hf_profile = hf_user
+                            # If profile matches username case-insensitively, use the correct case from whoami
+                            elif hf_profile.lower() == hf_user.lower():
+                                hf_profile = hf_user
+                            # If profile matches an org case-insensitively, use the correct case from whoami
+                            else:
+                                for org in hf_orgs:
+                                    if hf_profile.lower() == org.lower():
+                                        hf_profile = org
+                                        break
+                    except:
+                        pass
 
                 if not hf_profile:
                     # Final fallback if everything fails

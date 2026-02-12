@@ -87,10 +87,26 @@ def main():
                 print(f"Member of organizations: {', '.join(orgs)}")
 
             # Check if we have access to the namespace
-            target_namespace = args.space_id.split('/')[0] if '/' in args.space_id else None
-            if target_namespace and target_namespace != username and target_namespace not in orgs:
-                print(f"Warning: Target namespace '{target_namespace}' is not your username and not in your organizations.")
-                print(f"This might lead to 403 Forbidden errors if you don't have write access.")
+            if '/' in args.space_id:
+                target_namespace, space_name = args.space_id.split('/', 1)
+
+                # Case-insensitive match for username
+                if target_namespace.lower() == username.lower() and target_namespace != username:
+                    print(f"Correcting namespace case from '{target_namespace}' to '{username}'")
+                    args.space_id = f"{username}/{space_name}"
+                    target_namespace = username
+                else:
+                    # Check case-insensitive match for organizations
+                    for org in orgs:
+                        if target_namespace.lower() == org.lower() and target_namespace != org:
+                            print(f"Correcting namespace case from '{target_namespace}' to '{org}'")
+                            args.space_id = f"{org}/{space_name}"
+                            target_namespace = org
+                            break
+
+                if target_namespace != username and target_namespace not in orgs:
+                    print(f"Warning: Target namespace '{target_namespace}' is not your username and not in your organizations.")
+                    print(f"This might lead to 403 Forbidden errors if you don't have write access.")
         except Exception as diag_e:
             print(f"Warning: Could not fetch user info for diagnostics: {diag_e}")
 
