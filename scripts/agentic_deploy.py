@@ -9,8 +9,8 @@ import subprocess
 import csv
 from huggingface_hub import HfApi
 from deepagents import create_deep_agent
+from deepagents.backends import FilesystemBackend
 from langchain_openai import ChatOpenAI
-from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_core.tools import tool
 from gradio_client import Client
 
@@ -22,10 +22,9 @@ SCRIPTS_DIR = os.path.join(BASE_DIR, 'scripts')
 def execute_bash(command: str) -> str:
     """Execute a bash command in the repository directory and return the output.
     Use this sparingly and only for necessary deployment tasks like running tests or building artifacts."""
-    # Note: In a production environment, this should be sandboxed.
     try:
-        # We assume the current working directory is the repository path
-        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=60)
+        # Command is executed in the current working directory of the script
+        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=120)
         return f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}\nReturn Code: {result.returncode}"
     except Exception as e:
         return f"Error executing command: {str(e)}"
@@ -129,13 +128,6 @@ def main():
         model_name="alias-code"
     )
 
-    # File tools
-    file_toolkit = FileManagementToolkit(
-        root_dir=os.path.abspath(args.repo_path),
-        selected_tools=["list_directory", "read_file", "write_file"]
-    )
-    tools = file_toolkit.get_tools() + [execute_bash]
-
     hf_docs_context = """
 HUGGING FACE SPACES DOCUMENTATION REFERENCE:
 1. README.md YAML Metadata:
@@ -143,8 +135,8 @@ HUGGING FACE SPACES DOCUMENTATION REFERENCE:
    ---
    title: My Space Title
    emoji: 🚀
-   colorFrom: blue
-   colorTo: green
+   colorFrom: [MUST BE one of: red, yellow, green, blue, indigo, purple, pink, gray]
+   colorTo: [MUST BE one of: red, yellow, green, blue, indigo, purple, pink, gray]
    sdk: gradio | streamlit | docker | static
    app_file: app.py (for gradio/streamlit)
    app_port: 7860 (for docker)
@@ -169,29 +161,30 @@ HUGGING FACE SPACES DOCUMENTATION REFERENCE:
    For Gradio SDK, the /api/predict and other endpoints are available.
 """
 
-    # Create Agent
+    # Create Agent with real filesystem backend
+    repo_abs_path = os.path.abspath(args.repo_path)
+    # virtual_mode=False ensures changes are written to the actual disk
+    backend = FilesystemBackend(root_dir=repo_abs_path, virtual_mode=False)
+
     agent = create_deep_agent(
         model=llm,
-        tools=tools,
-        system_prompt=f"You are an expert software engineer specialized in Hugging Face Spaces. {hf_docs_context}. Your mission is to iteratively analyze the code in {args.repo_path} and adapt it to work perfectly as a HF Space. Ensure the README.md is correct, dependencies are in requirements.txt, and a clear entry point exists. If it's a backend, ensure it uses port 7860.",
+        tools=[execute_bash],
+        backend=backend,
+        system_prompt=f"You are an expert software engineer specialized in Hugging Face Spaces. {hf_docs_context}. Your mission is to iteratively analyze the code in the current directory and adapt it to work perfectly as a HF Space. Ensure the README.md is correct, dependencies are in requirements.txt, and a clear entry point exists. If it's a backend, ensure it uses port 7860. CRITICAL: You MUST use one of the allowed colors for colorFrom and colorTo in README.md metadata.",
         debug=True
     )
 
     print("--- Phase 1: Iterative Agentic Adaptation ---")
-    # Change CWD to repo path so agent tools work correctly relative to root
-    old_cwd = os.getcwd()
-    os.chdir(os.path.abspath(args.repo_path))
-
     adapt_instruction = f"1. Explore the repository. 2. Decide on the best SDK. 3. Update README.md with proper YAML metadata. 4. Create/Modify app.py or Dockerfile as needed. 5. Ensure all necessary dependencies are in requirements.txt. 6. Verify that an API endpoint will be exposed on port 7860."
 
     try:
         agent.invoke({"messages": [{"role": "user", "content": adapt_instruction}]})
 
         print("--- Phase 1.1: Verification/Reflection ---")
-        verify_instruction = "Check the files you just modified. Does the README.md have the required YAML header? Is there an entry point? Are the ports correct?"
+        verify_instruction = "Check the files you just modified. Does the README.md have the required YAML header? Is there an entry point? Are the ports correct? Ensure everything is committed to disk."
         agent.invoke({"messages": [{"role": "user", "content": verify_instruction}]})
-    finally:
-        os.chdir(old_cwd)
+    except Exception as e:
+        print(f"Agentic adaptation failed: {e}")
 
     print("--- Phase 2: Deployment ---")
     deploy_script = os.path.join(SCRIPTS_DIR, 'deploy_to_hf.py')

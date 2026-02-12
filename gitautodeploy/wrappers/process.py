@@ -30,21 +30,33 @@ class ProcessWrapper():
             del kwargs['supressStderr']
 
         p = Popen(*popenargs, **kwargs)
-        stdout, stderr = p.communicate()
 
-        # Decode bytes to string (assume utf-8 encoding)
-        stdout = stdout.decode("utf-8")
-        stderr = stderr.decode("utf-8")
+        stdout_accumulator = []
+        stderr_accumulator = []
 
-        if stdout:
-            for line in stdout.strip().split("\n"):
-                logger.info(line)
+        import threading
 
-        if stderr:
-            for line in stderr.strip().split("\n"):
-                if supressStderr:
-                    logger.info(line)
+        def handle_output(stream, accumulator, is_stderr):
+            for line in iter(stream.readline, b''):
+                decoded_line = line.decode("utf-8").rstrip()
+                accumulator.append(decoded_line)
+                if is_stderr and not supressStderr:
+                    logger.error(decoded_line)
                 else:
-                    logger.error(line)
+                    logger.info(decoded_line)
+            stream.close()
+
+        t1 = threading.Thread(target=handle_output, args=(p.stdout, stdout_accumulator, False))
+        t2 = threading.Thread(target=handle_output, args=(p.stderr, stderr_accumulator, True))
+
+        t1.start()
+        t2.start()
+
+        p.wait()
+        t1.join()
+        t2.join()
+
+        stdout = "\n".join(stdout_accumulator)
+        stderr = "\n".join(stderr_accumulator)
 
         return ProcessResult(p.returncode, stdout, stderr)
