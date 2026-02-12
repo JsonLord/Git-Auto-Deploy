@@ -42,7 +42,7 @@ def main():
     parser = argparse.ArgumentParser(description='Deploy to Hugging Face Spaces')
     parser.add_argument('--repo-path', required=True, help='Path to the local repository')
     parser.add_argument('--space-id', required=True, help='Hugging Face Space ID (e.g., user/space-name)')
-    parser.add_argument('--branch', default='main', help='Branch to deploy')
+    parser.add_argument('--branch', default='master', help='Branch to deploy')
     parser.add_argument('--token', help='Hugging Face API token')
     parser.add_argument('--create', action='store_true', help='Create the space if it does not exist')
     parser.add_argument('--sdk', default='static', help='SDK for the new space (if created)')

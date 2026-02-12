@@ -126,15 +126,19 @@ class GitWrapper():
 
         commands = []
         commands.append('unset GIT_DIR')
-        commands.append('git clone --recursive ' + repo_config['url'] + ' -b ' + branch + ' ' + repo_config['path'])
 
-        # All commands need to success
-        for command in commands:
-            res = ProcessWrapper().call(command, shell=True)
+        # Try to clone with specified branch, but fallback to default branch if it fails
+        clone_cmd = 'git clone --recursive ' + repo_config['url'] + ' -b ' + branch + ' ' + repo_config['path']
+        res = ProcessWrapper().call(clone_cmd, shell=True)
 
-            if res != 0:
-                logger.error("Command '%s' failed with exit code %s" % (command, res))
-                break
+        if res != 0:
+            logger.warning("Failed to clone branch %s, attempting to clone default branch" % branch)
+            clone_cmd = 'git clone --recursive ' + repo_config['url'] + ' ' + repo_config['path']
+            res = ProcessWrapper().call(clone_cmd, shell=True)
+
+        if res != 0:
+            logger.error("Unable to clone repository %s" % repo_config['url'])
+            return int(res)
 
         if res == 0 and os.path.isdir(repo_config['path']):
             logger.info("Repository %s successfully cloned" % repo_config['url'])
