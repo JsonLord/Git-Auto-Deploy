@@ -14,10 +14,17 @@ from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_core.tools import tool
 from gradio_client import Client
 
+# Absolute path to the scripts directory of Git-Auto-Deploy
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCRIPTS_DIR = os.path.join(BASE_DIR, 'scripts')
+
 @tool
 def execute_bash(command: str) -> str:
-    """Execute a bash command and return the output."""
+    """Execute a bash command in the repository directory and return the output.
+    Use this sparingly and only for necessary deployment tasks like running tests or building artifacts."""
+    # Note: In a production environment, this should be sandboxed.
     try:
+        # We assume the current working directory is the repository path
         result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=60)
         return f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}\nReturn Code: {result.returncode}"
     except Exception as e:
@@ -106,12 +113,13 @@ def main():
 
     args = parser.parse_args()
 
-    hf_token = args.token or os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN')
+    # Prioritize tokens
     openai_token = args.openai_token or os.environ.get('BLABLADOR_API_KEY')
+    hf_token = args.token or os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN')
     github_token = args.github_token or os.environ.get('GITHUB_TOKEN') or os.environ.get('GITHUB_API_KEY')
 
     if not openai_token:
-        print("Error: OpenAI token (BLABLADOR_API_KEY) not found")
+        print("Error: OpenAI token (BLABLADOR_API_KEY) not found. This is required for the LLM call.")
         sys.exit(1)
 
     # Initialize LLM
@@ -124,41 +132,71 @@ def main():
     # File tools
     file_toolkit = FileManagementToolkit(
         root_dir=os.path.abspath(args.repo_path),
-        selected_tools=["ls", "read_file", "write_file"]
+        selected_tools=["list_directory", "read_file", "write_file"]
     )
     tools = file_toolkit.get_tools() + [execute_bash]
 
-    hf_docs = """
-Hugging Face Spaces SDK Documentation:
-- Gradio: sdk: gradio. Requires app.py. API endpoints are automatically created for each input/output.
-- Streamlit: sdk: streamlit. Requires app.py.
-- Docker: sdk: docker. Requires a Dockerfile. IMPORTANT: Port 7860 must be exposed and the server must listen on 0.0.0.0:7860. The HF URL will automatically tunnel to this port.
-- README.md YAML Header:
-  ---
-  title: My Space Title
-  emoji: 🚀
-  colorFrom: blue
-  colorTo: green
-  sdk: [gradio/streamlit/docker]
-  app_file: app.py (for gradio/streamlit)
-  app_port: 7860 (for docker)
-  ---
+    hf_docs_context = """
+HUGGING FACE SPACES DOCUMENTATION REFERENCE:
+1. README.md YAML Metadata:
+   Every Space needs a README.md with a YAML block at the top.
+   ---
+   title: My Space Title
+   emoji: 🚀
+   colorFrom: blue
+   colorTo: green
+   sdk: gradio | streamlit | docker | static
+   app_file: app.py (for gradio/streamlit)
+   app_port: 7860 (for docker)
+   pinned: false
+   ---
+
+2. SDK Specifics:
+   - Gradio: Requires `gradio` in requirements.txt. Main file is usually app.py. API endpoints are automatically created.
+   - Streamlit: Requires `streamlit` in requirements.txt. Main file is app.py.
+   - Docker: Requires a Dockerfile. MUST expose port 7860. The server inside MUST listen on 0.0.0.0:7860.
+     Example Dockerfile:
+     FROM python:3.12
+     WORKDIR /app
+     COPY . .
+     RUN pip install -r requirements.txt
+     EXPOSE 7860
+     CMD ["python", "app.py"]
+
+3. API Access:
+   HF Spaces tunnel port 7860 to the public URL: https://user-space.hf.space
+   For Docker SDK, any HTTP server on 7860 is accessible.
+   For Gradio SDK, the /api/predict and other endpoints are available.
 """
 
     # Create Agent
     agent = create_deep_agent(
         model=llm,
         tools=tools,
-        system_prompt=f"You are a specialized deployment agent. {hf_docs}. Your goal is to iteratively analyze and modify the repository at {args.repo_path} to make it a working Hugging Face Space. Ensure proper README.md metadata and entry points. Expose APIs and make them accessible via the public URL.",
+        system_prompt=f"You are an expert software engineer specialized in Hugging Face Spaces. {hf_docs_context}. Your mission is to iteratively analyze the code in {args.repo_path} and adapt it to work perfectly as a HF Space. Ensure the README.md is correct, dependencies are in requirements.txt, and a clear entry point exists. If it's a backend, ensure it uses port 7860.",
         debug=True
     )
 
-    print("--- Phase 1: Iterative Analysis & Modification ---")
-    agent.invoke({"messages": [{"role": "user", "content": f"Analyze {args.repo_path} and adapt it for HF Space. If it's a backend app, expose it via a web server on port 7860. If it's Gradio, ensure app.py is ready."}]})
+    print("--- Phase 1: Iterative Agentic Adaptation ---")
+    # Change CWD to repo path so agent tools work correctly relative to root
+    old_cwd = os.getcwd()
+    os.chdir(os.path.abspath(args.repo_path))
+
+    adapt_instruction = f"1. Explore the repository. 2. Decide on the best SDK. 3. Update README.md with proper YAML metadata. 4. Create/Modify app.py or Dockerfile as needed. 5. Ensure all necessary dependencies are in requirements.txt. 6. Verify that an API endpoint will be exposed on port 7860."
+
+    try:
+        agent.invoke({"messages": [{"role": "user", "content": adapt_instruction}]})
+
+        print("--- Phase 1.1: Verification/Reflection ---")
+        verify_instruction = "Check the files you just modified. Does the README.md have the required YAML header? Is there an entry point? Are the ports correct?"
+        agent.invoke({"messages": [{"role": "user", "content": verify_instruction}]})
+    finally:
+        os.chdir(old_cwd)
 
     print("--- Phase 2: Deployment ---")
+    deploy_script = os.path.join(SCRIPTS_DIR, 'deploy_to_hf.py')
     deploy_cmd = [
-        'python3', 'scripts/deploy_to_hf.py',
+        'python3', deploy_script,
         '--repo-path', args.repo_path,
         '--space-id', args.space_id,
         '--token', hf_token,
@@ -167,20 +205,21 @@ Hugging Face Spaces SDK Documentation:
     ]
     subprocess.run(deploy_cmd, check=True)
 
-    # Space URL
+    # Wait for Space to settle
     space_url = get_hf_space_url(args.space_id)
     print(f"Space URL: {space_url}")
-    print("Waiting for Space to be ready...")
-    time.sleep(30)
+    print("Waiting 60 seconds for build and startup...")
+    time.sleep(60)
 
     print("--- Phase 3: API Discovery & Testing ---")
     log_sheet = []
 
     # Try discovery via Gradio first
     try:
+        print(f"Attempting Gradio client discovery for {args.space_id}...")
         client = Client(args.space_id)
         api_info = client.view_api(return_format='dict')
-        for ep in api_info['endpoints']:
+        for ep in api_info.get('endpoints', []):
             log_sheet.append({
                 "endpoint": f"Gradio: {ep}",
                 "status": 200,
@@ -191,7 +230,7 @@ Hugging Face Spaces SDK Documentation:
     except Exception as e:
         print(f"Gradio discovery skipped: {e}")
 
-    # Root test
+    # Generic Root test
     root_res = test_endpoint(space_url)
     log_sheet.append({
         "endpoint": "/",
@@ -201,13 +240,14 @@ Hugging Face Spaces SDK Documentation:
         "classification": "OK" if root_res['success'] else "FAILURE"
     })
 
-    # Manual scan
+    # Manual scan for more endpoints
     found = scan_for_endpoints(args.repo_path)
     for f in found:
-        if isinstance(f['match'], str) and f['match'].startswith('/'):
-            t_res = test_endpoint(space_url, f['match'])
+        path = f['match']
+        if isinstance(path, str) and path.startswith('/'):
+            t_res = test_endpoint(space_url, path)
             log_sheet.append({
-                "endpoint": f['match'],
+                "endpoint": path,
                 "status": t_res['status'],
                 "success": t_res['success'],
                 "details": str(t_res.get('response', t_res.get('error', ''))),
@@ -215,21 +255,26 @@ Hugging Face Spaces SDK Documentation:
             })
 
     sheet_path = save_log_sheet(log_sheet, args.repo_path)
-    print(f"Results saved to {sheet_path}")
+    print(f"Log sheet saved to {sheet_path}")
 
-    print("--- Phase 4: Classification & Reporting ---")
+    print("--- Phase 4: Failure Analysis & Jules Reporting ---")
     failures = [e for e in log_sheet if e['classification'] == 'FAILURE']
     if failures:
         fail_ctx = json.dumps(failures, indent=2)
-        analysis = llm.invoke(f"The following endpoints failed on the HF Space deployment: {fail_ctx}. Classify as CODE_ERROR or TEST_ERROR. If CODE_ERROR, describe the bug.")
+        print(f"Analyzing {len(failures)} failures...")
+        analysis_prompt = f"The following API endpoints failed on the HF Space: {fail_ctx}. Analyze if these are 'CODE_ERROR' (bug in app) or 'TEST_ERROR' (test misconfiguration). If CODE_ERROR, identify the fix."
+
+        analysis = llm.invoke(analysis_prompt)
         print(f"Analysis: {analysis.content}")
 
         if "CODE_ERROR" in analysis.content.upper() and github_token and args.github_repo:
+            print(f"Reporting CODE_ERROR to Jules for {args.github_repo}...")
+            report_script = os.path.join(SCRIPTS_DIR, 'report_to_jules.py')
             report_cmd = [
-                'python3', 'scripts/report_to_jules.py',
+                'python3', report_script,
                 '--repo', args.github_repo,
                 '--branch', args.branch,
-                '--error-msg', f"Failures:\n{fail_ctx}\n\nAnalysis:\n{analysis.content}",
+                '--error-msg', f"API Failures:\n{fail_ctx}\n\nAnalysis:\n{analysis.content}",
                 '--token', github_token,
                 '--space-id', args.space_id
             ]

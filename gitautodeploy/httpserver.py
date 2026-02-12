@@ -298,18 +298,20 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                 # Determine which token env var to use for the command string
                 hf_token_var = 'HF_TOKEN' if 'HF_TOKEN' in os.environ else 'HUGGING_FACE_HUB_TOKEN'
 
-                # Use absolute path for scripts/deploy_to_hf.py to avoid relative path issues
+                # Use absolute path for scripts/agentic_deploy.py to avoid relative path issues
                 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                deploy_script = os.path.join(base_dir, 'scripts', 'deploy_to_hf.py')
+                deploy_script = os.path.join(base_dir, 'scripts', 'agentic_deploy.py')
 
                 repo_config = {
                     'url': repo_url,
                     'branch': 'main',
                     'remote': 'origin',
                     'path': f'/app/repositories/{repo_name.split("/")[-1]}',
-                    'deploy': f'python3 {deploy_script} --repo-path . --space-id {space_id} --branch %branch% --create --token ${hf_token_var}',
+                    'deploy': f'python3 {deploy_script} --repo-path . --space-id {space_id} --branch %branch% --github-repo {repo_name} --token ${hf_token_var} --openai-token $BLABLADOR_API_KEY',
                     'huggingface_space': space_id,
-                    'report_to_jules': True
+                    'report_to_jules': True,
+                    'github_repo': repo_name,
+                    'deploy_newest_branch': True
                 }
 
                 success, msg = GitAutoDeploy().add_repository(repo_config, inject_actions=inject_actions)
