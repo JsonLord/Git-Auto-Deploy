@@ -10,5 +10,15 @@
   "log-file": "/tmp/gitautodeploy.log",
   "pid-file": "/tmp/gitautodeploy.pid",
   "log-level": "INFO",
-  "repositories": []
+  "repositories": [
+    {
+      "url": "https://github.com/JsonLord/Git-Auto-Deploy.git",
+      "branch": "main",
+      "remote": "origin",
+      "path": "/app/repositories/git-auto-deploy",
+      "deploy": "python3 scripts/deploy_to_hf.py --repo-path . --space-id harvesthealth/magnetic-ui --branch main",
+      "huggingface_space": "harvesthealth/magnetic-ui",
+      "report_to_jules": true
+    }
+  ]
 }
