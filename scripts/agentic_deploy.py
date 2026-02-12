@@ -186,6 +186,47 @@ HUGGING FACE SPACES DOCUMENTATION REFERENCE:
     except Exception as e:
         print(f"Agentic adaptation failed: {e}")
 
+    # Phase 1.2: Change Detection
+    print("--- Phase 1.2: Change Detection ---")
+    repo_path = os.path.abspath(args.repo_path)
+    git_status = subprocess.run(['git', 'status', '--porcelain'], cwd=repo_path, capture_output=True, text=True).stdout.strip()
+
+    new_branch = args.branch
+    if git_status:
+        print("Changes detected in the repository. Committing and pushing to a new branch.")
+
+        timestamp = int(time.time())
+        new_branch = f"agent-adaptation-{timestamp}"
+
+        try:
+            # Configure git user if not set
+            subprocess.run(['git', 'config', 'user.name', 'Agentic Deployer'], cwd=repo_path)
+            subprocess.run(['git', 'config', 'user.email', 'agent@example.com'], cwd=repo_path)
+
+            # Create and switch to new branch
+            subprocess.run(['git', 'checkout', '-b', new_branch], cwd=repo_path, check=True)
+
+            # Add and commit
+            subprocess.run(['git', 'add', '.'], cwd=repo_path, check=True)
+            subprocess.run(['git', 'commit', '-m', 'Auto-adaptation for Hugging Face Spaces'], cwd=repo_path, check=True)
+
+            # Push to GitHub if token and repo are available
+            if github_token and args.github_repo:
+                print(f"Pushing new branch {new_branch} to GitHub...")
+                # Construct authenticated URL
+                auth_url = f"https://x-access-token:{github_token}@github.com/{args.github_repo}.git"
+                subprocess.run(['git', 'push', auth_url, new_branch], cwd=repo_path, check=True)
+                print(f"Branch {new_branch} pushed successfully.")
+            else:
+                print("Skipping push to GitHub: missing token or repo info.")
+
+        except Exception as git_e:
+            print(f"Git operations failed: {git_e}")
+            # Fallback to original branch for deployment if push fails?
+            # Or continue with local changes on whatever branch we are.
+    else:
+        print("No changes detected.")
+
     print("--- Phase 2: Deployment ---")
     deploy_script = os.path.join(SCRIPTS_DIR, 'deploy_to_hf.py')
     deploy_cmd = [
@@ -193,7 +234,7 @@ HUGGING FACE SPACES DOCUMENTATION REFERENCE:
         '--repo-path', args.repo_path,
         '--space-id', args.space_id,
         '--token', hf_token,
-        '--branch', args.branch,
+        '--branch', new_branch,
         '--create'
     ]
     subprocess.run(deploy_cmd, check=True)

@@ -76,6 +76,10 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                 self.handle_hf_check_api()
                 return
 
+            if self.path.startswith("/api/github/branches"):
+                self.handle_github_branches_api()
+                return
+
             # Serve static file
             return SimpleHTTPRequestHandler.do_GET(self)
 
@@ -112,6 +116,53 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({"success": success, "message": msg}).encode('utf-8'))
+
+        def handle_github_branches_api(self):
+            import json
+            import subprocess
+            try:
+                from urlparse import parse_qs, urlparse
+            except (ModuleNotFoundError, ImportError):
+                from urllib.parse import parse_qs, urlparse
+
+            query = parse_qs(urlparse(self.path).query)
+            repo_url = query.get('url', [None])[0]
+
+            if not repo_url:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "message": "Missing url"}).encode('utf-8'))
+                return
+
+            # Add token if available in env
+            token = os.environ.get('GITHUB_TOKEN') or os.environ.get('GITHUB_API_KEY')
+            if token and 'github.com' in repo_url:
+                import re
+                repo_url = re.sub(r'https://github\.com/', f'https://x-access-token:{token}@github.com/', repo_url)
+
+            try:
+                cmd = ['git', 'ls-remote', '--heads', repo_url]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if result.returncode == 0:
+                    branches = []
+                    for line in result.stdout.strip().split('\n'):
+                        if line:
+                            # format: <hash>\trefs/heads/<branch>
+                            branch = line.split('\t')[1].replace('refs/heads/', '')
+                            branches.append(branch)
+
+                    self.send_response(200, 'OK')
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": True, "branches": branches}).encode('utf-8'))
+                else:
+                    self.send_response(500)
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": False, "message": result.stderr}).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "message": str(e)}).encode('utf-8'))
 
         def handle_hf_check_api(self):
             import json
@@ -215,6 +266,7 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
         def handle_repo_add_api(self):
             import json
             import os
+            import requests
             from .gitautodeploy import GitAutoDeploy
 
             content_length = int(self.headers.get('content-length', 0))
@@ -229,6 +281,7 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
             try:
                 data = json.loads(request_body)
                 repo_url = data.get('url')
+                repo_branch = data.get('branch', 'main')
                 inject_actions = data.get('inject_actions', False)
                 if not repo_url:
                     self.send_response(400)
@@ -311,7 +364,7 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
 
                 repo_config = {
                     'url': repo_url,
-                    'branch': 'main',
+                    'branch': repo_branch,
                     'remote': 'origin',
                     'path': f'/app/repositories/{repo_name.split("/")[-1]}',
                     'deploy': f'python3 {deploy_script} --repo-path . --space-id {space_id} --branch %branch% --github-repo {repo_name} --token ${hf_token_var} --openai-token $BLABLADOR_API_KEY',

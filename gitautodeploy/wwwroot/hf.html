@@ -46,7 +46,17 @@
 
     <h2>Add New GitHub Repo to HF Space</h2>
     <p>Enter a GitHub repository URL to automatically create a corresponding Hugging Face Space and start syncing.</p>
-    <input type="text" id="repo-url" placeholder="https://github.com/user/repo" style="width: 300px; padding: 10px;">
+    <input type="text" id="repo-url" placeholder="https://github.com/user/repo" oninput="debounceFetchBranches()" style="width: 300px; padding: 10px;">
+
+    <div style="margin: 10px 0;">
+        <label for="repo-branch">Select Branch:</label>
+        <select id="repo-branch" style="padding: 10px; min-width: 150px;">
+            <option value="main">main</option>
+            <option value="master">master</option>
+        </select>
+        <span id="branch-loading" style="display: none; font-size: 0.8em; color: #666;">Loading branches...</span>
+    </div>
+
     <div style="margin: 10px 0;">
         <label>
             <input type="checkbox" id="inject-actions"> Inject GitHub Actions for automatic sync (requires push access)
@@ -116,6 +126,40 @@
                 });
         }
 
+        let branchTimeout = null;
+        function debounceFetchBranches() {
+            if (branchTimeout) clearTimeout(branchTimeout);
+            branchTimeout = setTimeout(fetchBranches, 1000);
+        }
+
+        function fetchBranches() {
+            const url = document.getElementById('repo-url').value;
+            const branchSelect = document.getElementById('repo-branch');
+            const loading = document.getElementById('branch-loading');
+
+            if (!url || !url.startsWith('http')) return;
+
+            loading.style.display = 'inline';
+            fetch('/api/github/branches?url=' + encodeURIComponent(url))
+                .then(response => response.json())
+                .then(data => {
+                    loading.style.display = 'none';
+                    if (data.success && data.branches) {
+                        branchSelect.innerHTML = '';
+                        data.branches.forEach(branch => {
+                            const option = document.createElement('option');
+                            option.value = branch;
+                            option.textContent = branch;
+                            branchSelect.appendChild(option);
+                        });
+                    }
+                })
+                .catch(error => {
+                    loading.style.display = 'none';
+                    console.error('Error fetching branches:', error);
+                });
+        }
+
         function syncAllRepos() {
             const statusDiv = document.getElementById('sync-status');
             statusDiv.innerHTML = 'Requesting sync...';
@@ -136,6 +180,7 @@
 
         function addRepo() {
             const repoUrl = document.getElementById('repo-url').value;
+            const repoBranch = document.getElementById('repo-branch').value;
             const injectActions = document.getElementById('inject-actions').checked;
             const statusDiv = document.getElementById('add-status');
 
@@ -151,6 +196,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     url: repoUrl,
+                    branch: repoBranch,
                     inject_actions: injectActions
                 })
             })
