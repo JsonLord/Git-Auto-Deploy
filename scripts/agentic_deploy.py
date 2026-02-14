@@ -29,6 +29,39 @@ def execute_bash(command: str) -> str:
     except Exception as e:
         return f"Error executing command: {str(e)}"
 
+@tool
+def write_memory(key: str, value: str) -> str:
+    """Write a key-value pair to the agent's persistent memory file (.agent_memory.json).
+    Use this to store important findings, decisions, or state across iterations."""
+    memory_path = '.agent_memory.json'
+    try:
+        memory = {}
+        if os.path.exists(memory_path):
+            with open(memory_path, 'r') as f:
+                memory = json.load(f)
+        memory[key] = value
+        with open(memory_path, 'w') as f:
+            json.dump(memory, f, indent=2)
+        return f"Successfully wrote {key} to memory."
+    except Exception as e:
+        return f"Error writing to memory: {str(e)}"
+
+@tool
+def read_memory(key: str = None) -> str:
+    """Read from the agent's persistent memory file (.agent_memory.json).
+    If key is provided, returns that specific value. Otherwise, returns the entire memory object."""
+    memory_path = '.agent_memory.json'
+    try:
+        if not os.path.exists(memory_path):
+            return "Memory is empty."
+        with open(memory_path, 'r') as f:
+            memory = json.load(f)
+        if key:
+            return str(memory.get(key, f"Key {key} not found in memory."))
+        return json.dumps(memory, indent=2)
+    except Exception as e:
+        return f"Error reading from memory: {str(e)}"
+
 def scan_for_endpoints(repo_path):
     """Scan the code for potential API endpoints."""
     endpoints = []
@@ -143,17 +176,16 @@ HUGGING FACE SPACES DOCUMENTATION REFERENCE:
    pinned: false
    ---
 
-2. SDK Specifics:
-   - Gradio: Requires `gradio` in requirements.txt. Main file is usually app.py. API endpoints are automatically created.
-   - Streamlit: Requires `streamlit` in requirements.txt. Main file is app.py.
-   - Docker: Requires a Dockerfile. MUST expose port 7860. The server inside MUST listen on 0.0.0.0:7860.
-     Example Dockerfile:
-     FROM python:3.12
-     WORKDIR /app
-     COPY . .
-     RUN pip install -r requirements.txt
-     EXPOSE 7860
-     CMD ["python", "app.py"]
+2. SDK Specifics & Best Practices:
+   - Dockerfile is Key: Base on suitable Python (e.g. 3.10-3.12). Include system deps, Python packages, and frontend build steps.
+   - Non-Root User: It is a good practice to create and use a non-root user (e.g. UID 1000) for security.
+   - uv Package Manager: Use `uv` for fast installs. When using `uv` in a non-virtual environment, use `uv pip install --system -r requirements.txt`.
+   - PATH Configuration: If installing as non-root, add `/home/user/.local/bin` to PATH.
+   - README: Ensure `sdk: docker` and `app_port: 7860` are present for Docker SDK.
+   - .hfignore: Create this to exclude large unnecessary files (like .git, __pycache__) to speed up deployment.
+   - Gradio SDK Tip: You can run arbitrary Python+interface stacks by selecting Gradio as SDK and serving a frontend on 7860.
+   - iFrame Links: Use target="_blank" for links to open in new windows.
+   - iFrame Resizer: If your custom frontend height exceeds viewport, include: <script src="https://cdnjs.com/libraries/iframe-resizer"></script>
 
 3. API Access:
    HF Spaces tunnel port 7860 to the public URL: https://user-space.hf.space
@@ -168,9 +200,9 @@ HUGGING FACE SPACES DOCUMENTATION REFERENCE:
 
     agent = create_deep_agent(
         model=llm,
-        tools=[execute_bash],
+        tools=[execute_bash, write_memory, read_memory],
         backend=backend,
-        system_prompt=f"You are an expert software engineer specialized in Hugging Face Spaces. {hf_docs_context}. Your mission is to iteratively analyze the code in the current directory, understand its core functionality deeply, and adapt it to work perfectly as a reactive HF Space. A reactive space means it MUST have a user interface or backend server listening on port 7860. Static sites are discouraged; ensure there is an active process handling requests. Ensure the README.md is correct, dependencies are in requirements.txt, and a clear entry point exists. CRITICAL: You MUST use one of the allowed colors for colorFrom and colorTo in README.md metadata. If the app is already reactive, investigate its API endpoints.",
+        system_prompt=f"You are an expert software engineer specialized in Hugging Face Spaces. {hf_docs_context}. Your mission is to iteratively analyze the code in the current directory, understand its core functionality deeply, and adapt it to work perfectly as a reactive HF Space. A reactive space means it MUST have a user interface or backend server listening on port 7860. Static sites are discouraged; ensure there is an active process handling requests. Use the write_memory and read_memory tools to maintain state and findings across your investigation. Ensure the README.md is correct, dependencies are in requirements.txt, and a clear entry point exists. CRITICAL: You MUST use one of the allowed colors for colorFrom and colorTo in README.md metadata. If the app is already reactive, investigate its API endpoints.",
         debug=True
     )
 
