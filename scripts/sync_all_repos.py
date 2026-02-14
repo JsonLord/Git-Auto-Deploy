@@ -38,6 +38,7 @@ def main():
     parser.add_argument('--token', help='GitHub API token')
     parser.add_argument('--limit', type=int, default=100, help='Maximum number of repos to sync')
     parser.add_argument('--inject-actions', action='store_true', help='Inject GitHub Actions for automatic sync')
+    parser.add_argument('--detect-newest', action='store_true', default=True, help='Detect and use the newest branch for each repo')
 
     args = parser.parse_args()
 
@@ -63,7 +64,8 @@ def main():
                 f"{args.gad_url}/api/repo/add",
                 json={
                     "url": repo_url,
-                    "inject_actions": args.inject_actions
+                    "inject_actions": args.inject_actions,
+                    "detect_newest": args.detect_newest
                 },
                 timeout=30
             )

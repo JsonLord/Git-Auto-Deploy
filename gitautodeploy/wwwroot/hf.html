@@ -197,7 +197,8 @@
                 body: JSON.stringify({
                     url: repoUrl,
                     branch: repoBranch,
-                    inject_actions: injectActions
+                    inject_actions: injectActions,
+                    detect_newest: false
                 })
             })
             .then(response => response.json())

@@ -170,19 +170,42 @@ HUGGING FACE SPACES DOCUMENTATION REFERENCE:
         model=llm,
         tools=[execute_bash],
         backend=backend,
-        system_prompt=f"You are an expert software engineer specialized in Hugging Face Spaces. {hf_docs_context}. Your mission is to iteratively analyze the code in the current directory and adapt it to work perfectly as a HF Space. Ensure the README.md is correct, dependencies are in requirements.txt, and a clear entry point exists. If it's a backend, ensure it uses port 7860. CRITICAL: You MUST use one of the allowed colors for colorFrom and colorTo in README.md metadata.",
+        system_prompt=f"You are an expert software engineer specialized in Hugging Face Spaces. {hf_docs_context}. Your mission is to iteratively analyze the code in the current directory, understand its core functionality deeply, and adapt it to work perfectly as a reactive HF Space. A reactive space means it MUST have a user interface or backend server listening on port 7860. Static sites are discouraged; ensure there is an active process handling requests. Ensure the README.md is correct, dependencies are in requirements.txt, and a clear entry point exists. CRITICAL: You MUST use one of the allowed colors for colorFrom and colorTo in README.md metadata. If the app is already reactive, investigate its API endpoints.",
         debug=True
     )
 
-    print("--- Phase 1: Iterative Agentic Adaptation ---")
-    adapt_instruction = f"1. Explore the repository. 2. Decide on the best SDK. 3. Update README.md with proper YAML metadata. 4. Create/Modify app.py or Dockerfile as needed. 5. Ensure all necessary dependencies are in requirements.txt. 6. Verify that an API endpoint will be exposed on port 7860."
+    print("--- Phase 1: Iterative Agentic Investigation & Adaptation ---")
+    adapt_instruction = (
+        "1. Deeply investigate the repository. Read the main code files, look for entry points, and understand what the app is intended to do.\n"
+        "2. Ensure the app is REACTIVE. If it's just a static site, convert it to use a simple Python backend (e.g., FastAPI, Flask, or Gradio) to serve the content or add interactive features.\n"
+        "3. Decide on the best SDK (gradio, streamlit, or docker). If using docker, ensure the Dockerfile EXPOSEs and the app listens on port 7860.\n"
+        "4. Update README.md with proper YAML metadata including title, emoji, and valid colors.\n"
+        "5. Create or modify app.py or Dockerfile to ensure port 7860 is used for the UI/API.\n"
+        "6. Ensure all necessary dependencies are in requirements.txt.\n"
+        "7. Identify all potential API endpoints or UI routes and document them."
+    )
 
     try:
         agent.invoke({"messages": [{"role": "user", "content": adapt_instruction}]})
 
-        print("--- Phase 1.1: Verification/Reflection ---")
-        verify_instruction = "Check the files you just modified. Does the README.md have the required YAML header? Is there an entry point? Are the ports correct? Ensure everything is committed to disk."
+        print("--- Phase 1.1: Verification & Endpoint Discovery ---")
+        verify_instruction = (
+            "Verify your changes. Is the app now reactive and listening on 7860? "
+            "List all the API endpoints you have identified or created. "
+            "For each endpoint, describe its functionality and expected input/output. "
+            "Ensure everything is committed to disk."
+        )
         agent.invoke({"messages": [{"role": "user", "content": verify_instruction}]})
+
+        print("--- Phase 1.2: Deep Functional Testing ---")
+        test_instruction = (
+            "Now perform deep functional testing. Create a temporary Python script (e.g., `test_endpoints_internal.py`) "
+            "that starts the app (if possible in the background), waits for it to be ready, and then sends real requests "
+            "to the identified endpoints to verify they work as expected. "
+            "Record the results of these tests. If any tests fail, fix the code and re-test. "
+            "Delete the temporary test script when finished."
+        )
+        agent.invoke({"messages": [{"role": "user", "content": test_instruction}]})
     except Exception as e:
         print(f"Agentic adaptation failed: {e}")
 

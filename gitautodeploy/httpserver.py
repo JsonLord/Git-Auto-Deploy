@@ -283,6 +283,7 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                 repo_url = data.get('url')
                 repo_branch = data.get('branch', 'main')
                 inject_actions = data.get('inject_actions', False)
+                detect_newest = data.get('detect_newest', True)
                 if not repo_url:
                     self.send_response(400)
                     self.send_header('Content-type', 'application/json')
@@ -371,7 +372,7 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                     'huggingface_space': space_id,
                     'report_to_jules': True,
                     'github_repo': repo_name,
-                    'deploy_newest_branch': True
+                    'deploy_newest_branch': detect_newest
                 }
 
                 success, msg = GitAutoDeploy().add_repository(repo_config, inject_actions=inject_actions)
