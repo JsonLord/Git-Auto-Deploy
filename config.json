@@ -10,5 +10,16 @@
   "log-file": "/tmp/gitautodeploy.log",
   "pid-file": "/tmp/gitautodeploy.pid",
   "log-level": "INFO",
-  "repositories": []
+  "repositories": [
+    {
+      "url": "https://github.com/JsonLord/Git-Auto-Deploy.git",
+      "branch": "master",
+      "remote": "origin",
+      "path": "/app/repositories/git-auto-deploy",
+      "deploy": "python3 scripts/agentic_deploy.py --repo-path . --space-id $SPACE_ID --branch %branch% --github-repo JsonLord/Git-Auto-Deploy --token $HF_TOKEN --openai-token $BLABLADOR_API_KEY",
+      "huggingface_space": "harvesthealth/magnetic-ui",
+      "report_to_jules": true,
+      "github_repo": "JsonLord/Git-Auto-Deploy"
+    }
+  ]
 }

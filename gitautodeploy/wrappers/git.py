@@ -9,7 +9,7 @@ class GitWrapper():
     def init(repo_config):
         """Init remote url of the repo from the git server"""
         import logging
-        from .process import ProcessWrapper
+        from .process import ProcessWrapper, scrub_tokens
         import os
         import platform
 
@@ -36,7 +36,8 @@ class GitWrapper():
             res = ProcessWrapper().call(command, cwd=repo_config['path'], shell=True, supressStderr=True)
 
             if res != 0:
-                logger.error("Command '%s' failed with exit code %s" % (command, res))
+                safe_command = scrub_tokens(command)
+                logger.error("Command '%s' failed with exit code %s" % (safe_command, res))
                 break
 
         if res == 0 and os.path.isdir(repo_config['path']):
@@ -50,7 +51,7 @@ class GitWrapper():
     def pull(repo_config):
         """Pulls the latest version of the repo from the git server"""
         import logging
-        from .process import ProcessWrapper
+        from .process import ProcessWrapper, scrub_tokens
         import os
         import platform
 
@@ -97,7 +98,8 @@ class GitWrapper():
             res = ProcessWrapper().call(command, cwd=repo_config['path'], shell=True, supressStderr=True)
 
             if res != 0:
-                logger.error("Command '%s' failed with exit code %s" % (command, res))
+                safe_command = scrub_tokens(command)
+                logger.error("Command '%s' failed with exit code %s" % (safe_command, res))
                 break
 
         if res == 0 and os.path.isdir(repo_config['path']):
@@ -126,15 +128,19 @@ class GitWrapper():
 
         commands = []
         commands.append('unset GIT_DIR')
-        commands.append('git clone --recursive ' + repo_config['url'] + ' -b ' + branch + ' ' + repo_config['path'])
 
-        # All commands need to success
-        for command in commands:
-            res = ProcessWrapper().call(command, shell=True)
+        # Try to clone with specified branch, but fallback to default branch if it fails
+        clone_cmd = 'git clone --recursive ' + repo_config['url'] + ' -b ' + branch + ' ' + repo_config['path']
+        res = ProcessWrapper().call(clone_cmd, shell=True)
 
-            if res != 0:
-                logger.error("Command '%s' failed with exit code %s" % (command, res))
-                break
+        if res != 0:
+            logger.warning("Failed to clone branch %s, attempting to clone default branch" % branch)
+            clone_cmd = 'git clone --recursive ' + repo_config['url'] + ' ' + repo_config['path']
+            res = ProcessWrapper().call(clone_cmd, shell=True)
+
+        if res != 0:
+            logger.error("Unable to clone repository %s" % repo_config['url'])
+            return int(res)
 
         if res == 0 and os.path.isdir(repo_config['path']):
             logger.info("Repository %s successfully cloned" % repo_config['url'])

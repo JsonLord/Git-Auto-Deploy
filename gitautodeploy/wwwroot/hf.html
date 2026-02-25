@@ -7,6 +7,7 @@
         pre { background: #eee; padding: 10px; border-radius: 5px; overflow-x: auto; }
         .error { color: red; }
         .success { color: green; }
+        .waiting { color: #f39c12; }
         button { padding: 10px 20px; cursor: pointer; }
         .docs { background: #f0f0f0; padding: 15px; margin-bottom: 20px; border-left: 5px solid #3498db; }
     </style>
@@ -45,7 +46,17 @@
 
     <h2>Add New GitHub Repo to HF Space</h2>
     <p>Enter a GitHub repository URL to automatically create a corresponding Hugging Face Space and start syncing.</p>
-    <input type="text" id="repo-url" placeholder="https://github.com/user/repo" style="width: 300px; padding: 10px;">
+    <input type="text" id="repo-url" placeholder="https://github.com/user/repo" oninput="debounceFetchBranches()" style="width: 300px; padding: 10px;">
+
+    <div style="margin: 10px 0;">
+        <label for="repo-branch">Select Branch:</label>
+        <select id="repo-branch" style="padding: 10px; min-width: 150px;">
+            <option value="main">main</option>
+            <option value="master">master</option>
+        </select>
+        <span id="branch-loading" style="display: none; font-size: 0.8em; color: #666;">Loading branches...</span>
+    </div>
+
     <div style="margin: 10px 0;">
         <label>
             <input type="checkbox" id="inject-actions"> Inject GitHub Actions for automatic sync (requires push access)
@@ -53,6 +64,13 @@
     </div>
     <button onclick="addRepo()">Add & Deploy to HF</button>
     <div id="add-status"></div>
+
+    <hr>
+
+    <h2>Update Summary</h2>
+    <div id="events-container" style="max-height: 400px; overflow-y: auto; background: #fafafa; border: 1px solid #ddd; padding: 10px; border-radius: 5px;">
+        <p>No active updates. Add a repository or push changes to GitHub to see progress here.</p>
+    </div>
 
     <hr>
 
@@ -108,6 +126,40 @@
                 });
         }
 
+        let branchTimeout = null;
+        function debounceFetchBranches() {
+            if (branchTimeout) clearTimeout(branchTimeout);
+            branchTimeout = setTimeout(fetchBranches, 1000);
+        }
+
+        function fetchBranches() {
+            const url = document.getElementById('repo-url').value;
+            const branchSelect = document.getElementById('repo-branch');
+            const loading = document.getElementById('branch-loading');
+
+            if (!url || !url.startsWith('http')) return;
+
+            loading.style.display = 'inline';
+            fetch('/api/github/branches?url=' + encodeURIComponent(url))
+                .then(response => response.json())
+                .then(data => {
+                    loading.style.display = 'none';
+                    if (data.success && data.branches) {
+                        branchSelect.innerHTML = '';
+                        data.branches.forEach(branch => {
+                            const option = document.createElement('option');
+                            option.value = branch;
+                            option.textContent = branch;
+                            branchSelect.appendChild(option);
+                        });
+                    }
+                })
+                .catch(error => {
+                    loading.style.display = 'none';
+                    console.error('Error fetching branches:', error);
+                });
+        }
+
         function syncAllRepos() {
             const statusDiv = document.getElementById('sync-status');
             statusDiv.innerHTML = 'Requesting sync...';
@@ -128,6 +180,7 @@
 
         function addRepo() {
             const repoUrl = document.getElementById('repo-url').value;
+            const repoBranch = document.getElementById('repo-branch').value;
             const injectActions = document.getElementById('inject-actions').checked;
             const statusDiv = document.getElementById('add-status');
 
@@ -143,7 +196,9 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     url: repoUrl,
-                    inject_actions: injectActions
+                    branch: repoBranch,
+                    inject_actions: injectActions,
+                    detect_newest: false
                 })
             })
             .then(response => response.json())
@@ -151,6 +206,8 @@
                 if (data.success) {
                     statusDiv.innerHTML = '<p class="success">Success: ' + data.message + '</p>' +
                         '<p>New Space ID: ' + data.repo_config.huggingface_space + '</p>';
+                    // Start polling immediately after adding
+                    pollStatus();
                 } else {
                     statusDiv.innerHTML = '<p class="error">Failed: ' + data.message + '</p>';
                 }
@@ -159,6 +216,38 @@
                 statusDiv.innerHTML = '<p class="error">Error: ' + error + '</p>';
             });
         }
+
+        function pollStatus() {
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('events-container');
+                    if (data.events && data.events.length > 0) {
+                        let html = '';
+                        // Reverse to show newest at the top
+                        [...data.events].reverse().forEach(event => {
+                            const statusClass = event.waiting ? 'waiting' : (event.success ? 'success' : 'error');
+                            const statusLabel = event.waiting ? 'IN PROGRESS' : (event.success ? 'SUCCESS' : 'FAILED');
+
+                            html += '<div style="border-bottom: 1px solid #eee; padding: 10px; margin-bottom: 10px;">' +
+                                '<div style="display: flex; justify-content: space-between;">' +
+                                '<strong>' + (event.name || event.type) + '</strong>' +
+                                '<span class="' + statusClass + '" style="font-weight: bold;">' + statusLabel + '</span>' +
+                                '</div>' +
+                                '<div style="font-size: 0.9em; color: #666; margin-top: 5px;">' +
+                                event.messages.map(m => '<div>- ' + m + '</div>').join('') +
+                                '</div>' +
+                                '</div>';
+                        });
+                        container.innerHTML = html;
+                    }
+                })
+                .catch(console.error);
+        }
+
+        // Poll every 5 seconds
+        setInterval(pollStatus, 5000);
+        pollStatus(); // Initial call
     </script>
 </body>
 </html>

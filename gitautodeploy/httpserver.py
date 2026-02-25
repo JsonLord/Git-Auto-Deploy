@@ -76,6 +76,10 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                 self.handle_hf_check_api()
                 return
 
+            if self.path.startswith("/api/github/branches"):
+                self.handle_github_branches_api()
+                return
+
             # Serve static file
             return SimpleHTTPRequestHandler.do_GET(self)
 
@@ -112,6 +116,53 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({"success": success, "message": msg}).encode('utf-8'))
+
+        def handle_github_branches_api(self):
+            import json
+            import subprocess
+            try:
+                from urlparse import parse_qs, urlparse
+            except (ModuleNotFoundError, ImportError):
+                from urllib.parse import parse_qs, urlparse
+
+            query = parse_qs(urlparse(self.path).query)
+            repo_url = query.get('url', [None])[0]
+
+            if not repo_url:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "message": "Missing url"}).encode('utf-8'))
+                return
+
+            # Add token if available in env
+            token = os.environ.get('GITHUB_TOKEN') or os.environ.get('GITHUB_API_KEY')
+            if token and 'github.com' in repo_url:
+                import re
+                repo_url = re.sub(r'https://github\.com/', f'https://x-access-token:{token}@github.com/', repo_url)
+
+            try:
+                cmd = ['git', 'ls-remote', '--heads', repo_url]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if result.returncode == 0:
+                    branches = []
+                    for line in result.stdout.strip().split('\n'):
+                        if line:
+                            # format: <hash>\trefs/heads/<branch>
+                            branch = line.split('\t')[1].replace('refs/heads/', '')
+                            branches.append(branch)
+
+                    self.send_response(200, 'OK')
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": True, "branches": branches}).encode('utf-8'))
+                else:
+                    self.send_response(500)
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": False, "message": result.stderr}).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "message": str(e)}).encode('utf-8'))
 
         def handle_hf_check_api(self):
             import json
@@ -215,6 +266,7 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
         def handle_repo_add_api(self):
             import json
             import os
+            import requests
             from .gitautodeploy import GitAutoDeploy
 
             content_length = int(self.headers.get('content-length', 0))
@@ -229,7 +281,9 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
             try:
                 data = json.loads(request_body)
                 repo_url = data.get('url')
+                repo_branch = data.get('branch', 'main')
                 inject_actions = data.get('inject_actions', False)
+                detect_newest = data.get('detect_newest', True)
                 if not repo_url:
                     self.send_response(400)
                     self.send_header('Content-type', 'application/json')
@@ -249,21 +303,17 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                     return
 
                 repo_name = match.group(1)
-                # Robust profile detection: try various common env vars used in HF Spaces
+
+                # Check for explicit profile override
                 hf_profile = os.environ.get('HF_PROFILE') or \
                              os.environ.get('HF_Profile') or \
                              os.environ.get('HF_USERNAME') or \
-                             os.environ.get('HF_USER') or \
-                             os.environ.get('SPACE_AUTHOR_NAME')
+                             os.environ.get('HF_USER')
 
-                if not hf_profile:
-                    # Fallback to extracting from SPACE_ID if available (e.g. "user/space" -> "user")
-                    space_id_env = os.environ.get('SPACE_ID')
-                    if space_id_env and '/' in space_id_env:
-                        hf_profile = space_id_env.split('/')[0]
-
-                # Use whoami to ensure we have the correct case for the profile
+                # Use whoami to determine the identity of the token
                 token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN') or os.environ.get('hf_token')
+                hf_user = None
+                hf_orgs = []
                 if token:
                     try:
                         whoami_url = "https://huggingface.co/api/whoami-v2"
@@ -273,21 +323,32 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                             whoami_data = whoami_res.json()
                             hf_user = whoami_data.get('name')
                             hf_orgs = [org.get('name') for org in whoami_data.get('orgs', [])]
-
-                            # If no profile set, use the identified username
-                            if not hf_profile:
-                                hf_profile = hf_user
-                            # If profile matches username case-insensitively, use the correct case from whoami
-                            elif hf_profile.lower() == hf_user.lower():
-                                hf_profile = hf_user
-                            # If profile matches an org case-insensitively, use the correct case from whoami
-                            else:
-                                for org in hf_orgs:
-                                    if hf_profile.lower() == org.lower():
-                                        hf_profile = org
-                                        break
                     except:
                         pass
+
+                # Logic for profile detection:
+                # 1. Explicit environment variable (HF_PROFILE etc)
+                # 2. Token owner (hf_user)
+                # 3. Host Space owner (from SPACE_ID)
+
+                if not hf_profile:
+                    if hf_user:
+                        hf_profile = hf_user
+                    else:
+                        # Fallback to host space owner
+                        space_id_env = os.environ.get('SPACE_ID')
+                        if space_id_env and '/' in space_id_env:
+                            hf_profile = space_id_env.split('/')[0]
+
+                # Correct case if we have whoami info
+                if hf_user:
+                    if hf_profile.lower() == hf_user.lower():
+                        hf_profile = hf_user
+                    else:
+                        for org in hf_orgs:
+                            if hf_profile.lower() == org.lower():
+                                hf_profile = org
+                                break
 
                 if not hf_profile:
                     # Final fallback if everything fails
@@ -298,18 +359,20 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                 # Determine which token env var to use for the command string
                 hf_token_var = 'HF_TOKEN' if 'HF_TOKEN' in os.environ else 'HUGGING_FACE_HUB_TOKEN'
 
-                # Use absolute path for scripts/deploy_to_hf.py to avoid relative path issues
+                # Use absolute path for scripts/agentic_deploy.py to avoid relative path issues
                 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                deploy_script = os.path.join(base_dir, 'scripts', 'deploy_to_hf.py')
+                deploy_script = os.path.join(base_dir, 'scripts', 'agentic_deploy.py')
 
                 repo_config = {
                     'url': repo_url,
-                    'branch': 'main',
+                    'branch': repo_branch,
                     'remote': 'origin',
                     'path': f'/app/repositories/{repo_name.split("/")[-1]}',
-                    'deploy': f'python3 {deploy_script} --repo-path . --space-id {space_id} --branch %branch% --create --token ${hf_token_var}',
+                    'deploy': f'python3 {deploy_script} --repo-path . --space-id {space_id} --branch %branch% --github-repo {repo_name} --token ${hf_token_var} --openai-token $BLABLADOR_API_KEY',
                     'huggingface_space': space_id,
-                    'report_to_jules': True
+                    'report_to_jules': True,
+                    'github_repo': repo_name,
+                    'deploy_newest_branch': detect_newest
                 }
 
                 success, msg = GitAutoDeploy().add_repository(repo_config, inject_actions=inject_actions)

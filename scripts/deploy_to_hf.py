@@ -4,6 +4,7 @@ import time
 import sys
 import shutil
 import requests
+import re
 from huggingface_hub import HfApi
 
 def get_hf_logs(space_id, token, log_type="build"):
@@ -17,6 +18,46 @@ def get_hf_logs(space_id, token, log_type="build"):
             return f"Failed to fetch {log_type} logs: {response.status_code}"
     except Exception as e:
         return f"Error fetching {log_type} logs: {e}"
+
+def validate_and_fix_readme(readme_path):
+    if not os.path.exists(readme_path):
+        return
+
+    with open(readme_path, 'r') as f:
+        content = f.read()
+
+    if not content.strip().startswith('---'):
+        return
+
+    # Extract YAML block
+    match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
+    if not match:
+        return
+
+    yaml_block = match.group(1)
+    allowed_colors = ['red', 'yellow', 'green', 'blue', 'indigo', 'purple', 'pink', 'gray']
+
+    modified = False
+    new_yaml_lines = []
+    for line in yaml_block.split('\n'):
+        if 'colorFrom:' in line:
+            val = line.split(':', 1)[1].strip()
+            if val not in allowed_colors:
+                line = f"colorFrom: blue"
+                modified = True
+        elif 'colorTo:' in line:
+            val = line.split(':', 1)[1].strip()
+            if val not in allowed_colors:
+                line = f"colorTo: green"
+                modified = True
+        new_yaml_lines.append(line)
+
+    if modified:
+        new_yaml_block = '\n'.join(new_yaml_lines)
+        new_content = f"---\n{new_yaml_block}\n---" + content[match.end():]
+        with open(readme_path, 'w') as f:
+            f.write(new_content)
+        print(f"Fixed invalid metadata in {readme_path}")
 
 def check_file_sizes(repo_path, limit_mb=10):
     limit_bytes = limit_mb * 1024 * 1024
@@ -42,7 +83,7 @@ def main():
     parser = argparse.ArgumentParser(description='Deploy to Hugging Face Spaces')
     parser.add_argument('--repo-path', required=True, help='Path to the local repository')
     parser.add_argument('--space-id', required=True, help='Hugging Face Space ID (e.g., user/space-name)')
-    parser.add_argument('--branch', default='main', help='Branch to deploy')
+    parser.add_argument('--branch', default='master', help='Branch to deploy')
     parser.add_argument('--token', help='Hugging Face API token')
     parser.add_argument('--create', action='store_true', help='Create the space if it does not exist')
     parser.add_argument('--sdk', default='static', help='SDK for the new space (if created)')
@@ -131,6 +172,10 @@ def main():
 
         # Check if README.md exists in repo-path
         readme_path = os.path.join(args.repo_path, 'README.md')
+
+        # Validate and fix metadata before upload
+        validate_and_fix_readme(readme_path)
+
         content = ""
         if os.path.exists(readme_path):
             with open(readme_path, 'r') as f:

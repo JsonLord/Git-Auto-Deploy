@@ -5,6 +5,28 @@ class ProcessResult(int):
         self.stdout = stdout
         self.stderr = stderr
 
+def scrub_tokens(text):
+    import re
+    if not isinstance(text, str):
+        return text
+
+    # Patterns for common tokens
+    patterns = [
+        (r'hf_[a-zA-Z0-9]{20,}', '[HF_TOKEN_REDACTED]'),
+        (r'ghp_[a-zA-Z0-9]{20,}', '[GH_TOKEN_REDACTED]'),
+        (r'github_pat_[a-zA-Z0-9_]{20,}', '[GH_PAT_REDACTED]'),
+        (r'sk-[a-zA-Z0-9]{30,}', '[OPENAI_TOKEN_REDACTED]'),
+        (r'glpat-[a-zA-Z0-9\-]{20,}', '[GITLAB_TOKEN_REDACTED]'),
+        # Generic credential in URL
+        (r'https?://[^:\s]+:[^@\s]+@', 'https://[CREDENTIALS_REDACTED]@')
+    ]
+
+    scrubbed = text
+    for pattern, replacement in patterns:
+        scrubbed = re.sub(pattern, replacement, scrubbed)
+
+    return scrubbed
+
 class ProcessWrapper():
     """Wraps the subprocess popen method and provides logging."""
 
@@ -30,21 +52,37 @@ class ProcessWrapper():
             del kwargs['supressStderr']
 
         p = Popen(*popenargs, **kwargs)
-        stdout, stderr = p.communicate()
 
-        # Decode bytes to string (assume utf-8 encoding)
-        stdout = stdout.decode("utf-8")
-        stderr = stderr.decode("utf-8")
+        stdout_accumulator = []
+        stderr_accumulator = []
 
-        if stdout:
-            for line in stdout.strip().split("\n"):
-                logger.info(line)
+        import threading
 
-        if stderr:
-            for line in stderr.strip().split("\n"):
-                if supressStderr:
-                    logger.info(line)
+        def handle_output(stream, accumulator, is_stderr):
+            for line in iter(stream.readline, b''):
+                decoded_line = line.decode("utf-8").rstrip()
+                accumulator.append(decoded_line)
+
+                # Scrub tokens from logs
+                safe_line = scrub_tokens(decoded_line)
+
+                if is_stderr and not supressStderr:
+                    logger.error(safe_line)
                 else:
-                    logger.error(line)
+                    logger.info(safe_line)
+            stream.close()
+
+        t1 = threading.Thread(target=handle_output, args=(p.stdout, stdout_accumulator, False))
+        t2 = threading.Thread(target=handle_output, args=(p.stderr, stderr_accumulator, True))
+
+        t1.start()
+        t2.start()
+
+        p.wait()
+        t1.join()
+        t2.join()
+
+        stdout = "\n".join(stdout_accumulator)
+        stderr = "\n".join(stderr_accumulator)
 
         return ProcessResult(p.returncode, stdout, stderr)
