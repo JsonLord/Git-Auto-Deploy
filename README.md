@@ -1,15 +1,26 @@
+---
+title: Git-HF-Deployment
+emoji: 🧲
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+---
+
 [![Build Status](https://travis-ci.org/olipo186/Git-Auto-Deploy.svg?branch=master)](https://travis-ci.org/olipo186/Git-Auto-Deploy)
 # What is it?
 
-Git-Auto-Deploy consists of a small HTTP server that listens for Webhook requests sent from GitHub, GitLab or Bitbucket servers. This application allows you to continuously and automatically deploy your projects each time you push new commits to your repository.</p>
+Git-Auto-Deploy consists of a small HTTP server that listens for Webhook requests sent from GitHub, GitLab or Bitbucket servers. This application has been specialized to **automatically transform GitHub repositories into Hugging Face Spaces**, with integrated error correction via the Jules agent.
 
 ![workflow](https://cloud.githubusercontent.com/assets/1056476/9344294/d3bc32a4-4607-11e5-9a44-5cd9b22e61d9.png)
 
 # How does it work?
 
-When commits are pushed to your Git repository, the Git server will notify ```Git-Auto-Deploy``` by sending an HTTP POST request with a JSON body to a pre-configured URL (your-host:8001). The JSON body contains detailed information about the repository and what event that triggered the request. ```Git-Auto-Deploy``` parses and validates the request, and if all goes well it issues a ```git pull```.
-
-Additionally, ```Git-Auto-Deploy``` can be configured to execute a shell command upon each successful ```git pull```, which can be used to trigger custom build actions or test scripts.</p>
+1. **Webhook Trigger**: When you push commits to a GitHub repository, GitHub sends a Webhook request to this instance of ```Git-Auto-Deploy```.
+2. **GitHub Sync**: ```Git-Auto-Deploy``` validates the request and issues a ```git pull``` to update its local copy of the repository.
+3. **Hugging Face Deployment**: Upon a successful pull, the specialized ```deploy_to_hf.py``` script is triggered. This script uploads the repository contents to a Hugging Face Space using the ```huggingface_hub``` API.
+4. **Health Monitoring**: The deployment script polls the Hugging Face API to monitor the build and runtime status of the Space.
+5. **Jules Feedback Loop**: If a build or runtime error is detected, the system captures the logs and creates a GitHub issue with the ```jules:run``` label. Jules then fixes the code, pushes to GitHub, and the cycle repeats automatically until the deployment is successful.
 
 # Getting started
 

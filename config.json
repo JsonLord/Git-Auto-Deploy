@@ -1,0 +1,14 @@
+{
+  "http-enabled": true,
+  "http-host": "0.0.0.0",
+  "http-port": 7860,
+  "https-enabled": false,
+  "wss-enabled": false,
+  "web-ui-enabled": true,
+  "web-ui-auth-enabled": false,
+  "web-ui-require-https": false,
+  "log-file": "/tmp/gitautodeploy.log",
+  "pid-file": "/tmp/gitautodeploy.pid",
+  "log-level": "INFO",
+  "repositories": []
+}

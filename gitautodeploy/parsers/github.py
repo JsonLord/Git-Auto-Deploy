@@ -26,6 +26,14 @@ class GitHubRequestParser(WebhookRequestParserBase):
         # Get a list of configured repositories that matches the incoming web hook reqeust
         repo_configs = self.get_matching_repo_configs(repo_urls, action)
 
+        # Extract branch from payload
+        ref = data.get('ref')
+        if ref and ref.startswith('refs/heads/'):
+            branch = ref.replace('refs/heads/', '')
+            action.log_info("Detected branch: %s" % branch)
+            for project in repo_configs:
+                project['payload_branch'] = branch
+
         return repo_configs
 
     def validate_request(self, request_headers, request_body, repo_configs, action):

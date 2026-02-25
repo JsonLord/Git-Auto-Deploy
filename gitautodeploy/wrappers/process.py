@@ -1,3 +1,10 @@
+class ProcessResult(int):
+    def __new__(cls, returncode, stdout, stderr):
+        return super(ProcessResult, cls).__new__(cls, returncode)
+    def __init__(self, returncode, stdout, stderr):
+        self.stdout = stdout
+        self.stderr = stderr
+
 class ProcessWrapper():
     """Wraps the subprocess popen method and provides logging."""
 
@@ -40,4 +47,4 @@ class ProcessWrapper():
                 else:
                     logger.error(line)
 
-        return p.returncode
+        return ProcessResult(p.returncode, stdout, stderr)

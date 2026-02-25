@@ -1,0 +1,37 @@
+{
+  "http-port": 7860,
+  "http-host": "0.0.0.0",
+  "web-ui-enabled": true,
+  "web-ui-auth-enabled": false,
+  "log-file": "/tmp/gitautodeploy.log",
+  "pid-file": "/tmp/gitautodeploy.pid",
+  "log-level": "INFO",
+
+  "repositories": [
+    {
+      "url": "https://github.com/your-user/your-repo.git",
+      "branch": "main",
+      "remote": "origin",
+      "path": "/app/repositories/your-repo",
+
+      // Use the Hugging Face deployment script
+      "deploy": "python3 scripts/deploy_to_hf.py --repo-path . --space-id your-user/your-space --branch main",
+
+      // Hugging Face specific configuration for Jules reporting
+      "huggingface_space": "your-user/your-space",
+      "report_to_jules": true,
+
+      // Optionally specify the GitHub repo explicitly if it cannot be parsed from the URL
+      "github_repo": "your-user/your-repo",
+
+      "payload-filter": [
+        {
+          "ref": "refs/heads/main"
+        },
+        {
+          "ref": "refs/heads/jules-fix/*"
+        }
+      ]
+    }
+  ]
+}

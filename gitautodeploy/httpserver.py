@@ -68,6 +68,14 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
                 self.handle_status_api()
                 return
 
+            if self.path == "/api/github/sync":
+                self.handle_github_sync_api()
+                return
+
+            if self.path == "/api/hf/check":
+                self.handle_hf_check_api()
+                return
+
             # Serve static file
             return SimpleHTTPRequestHandler.do_GET(self)
 
@@ -86,22 +94,257 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
             self.send_response(200, 'OK')
             self.send_header('Content-type', 'application/json')
             self.end_headers()
-            self.wfile.write(json.dumps(data).encode('utf-8'))
+
+            def default(obj):
+                if isinstance(obj, bytes):
+                    return obj.decode('utf-8')
+                return str(obj)
+
+            self.wfile.write(json.dumps(data, default=default).encode('utf-8'))
+
+        def handle_github_sync_api(self):
+            import json
+            from .gitautodeploy import GitAutoDeploy
+
+            success, msg = GitAutoDeploy().sync_github_repos()
+
+            self.send_response(200, 'OK')
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": success, "message": msg}).encode('utf-8'))
+
+        def handle_hf_check_api(self):
+            import json
+            import os
+            import requests
+
+            # Prioritize HF_TOKEN as it's common in Spaces
+            token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN') or os.environ.get('hf_token')
+            space_id = os.environ.get('SPACE_ID', 'unknown')
+
+            # Robust profile detection: try various common env vars used in HF Spaces
+            hf_profile = os.environ.get('HF_PROFILE') or \
+                         os.environ.get('HF_Profile') or \
+                         os.environ.get('HF_USERNAME') or \
+                         os.environ.get('HF_USER') or \
+                         os.environ.get('SPACE_AUTHOR_NAME')
+
+            if not hf_profile and space_id != 'unknown' and '/' in space_id:
+                hf_profile = space_id.split('/')[0]
+
+            whoami_data = None
+            if token:
+                try:
+                    whoami_url = "https://huggingface.co/api/whoami-v2"
+                    headers = {"Authorization": f"Bearer {token}"}
+                    whoami_res = requests.get(whoami_url, headers=headers, timeout=5)
+                    if whoami_res.status_code == 200:
+                        whoami_data = whoami_res.json()
+                        hf_user = whoami_data.get('name')
+                        hf_orgs = [org.get('name') for org in whoami_data.get('orgs', [])]
+
+                        # Correct hf_profile case using whoami data
+                        if not hf_profile:
+                            hf_profile = hf_user
+                        elif hf_profile.lower() == hf_user.lower():
+                            hf_profile = hf_user
+                        else:
+                            for org in hf_orgs:
+                                if hf_profile.lower() == org.lower():
+                                    hf_profile = org
+                                    break
+                except:
+                    pass
+
+            # Basic env info
+            env_vars = {}
+            for k, v in os.environ.items():
+                if any(secret_key in k.upper() for secret_key in ["TOKEN", "KEY", "SECRET", "PASS", "AUTH"]):
+                    env_vars[k] = "***"
+                else:
+                    env_vars[k] = v
+
+            info = {
+                "space_id": space_id,
+                "hf_profile_detected": hf_profile,
+                "env_vars": env_vars,
+                "hf_connection": "Unknown",
+                "whoami": None
+            }
+
+            if token:
+                if whoami_data:
+                    info["whoami"] = {
+                        "name": whoami_data.get("name"),
+                        "fullname": whoami_data.get("fullname"),
+                        "email": whoami_data.get("email"),
+                        "orgs": [org.get("name") for org in whoami_data.get("orgs", [])]
+                    }
+                    info["hf_connection"] = "Authenticated"
+
+                    # Check space metadata if space_id is known
+                    if space_id != 'unknown':
+                        try:
+                            headers = {"Authorization": f"Bearer {token}"}
+                            url = f"https://huggingface.co/api/spaces/{space_id}"
+                            response = requests.get(url, headers=headers, timeout=5)
+                            if response.status_code == 200:
+                                info["hf_connection"] = "Authenticated & Space Found"
+                                info["space_metadata"] = response.json()
+
+                                # Try to get logs too
+                                build_logs_url = f"https://huggingface.co/api/spaces/{space_id}/logs/build"
+                                run_logs_url = f"https://huggingface.co/api/spaces/{space_id}/logs/run"
+
+                                info["build_logs"] = requests.get(build_logs_url, headers=headers, timeout=5).text[:5000]
+                                info["run_logs"] = requests.get(run_logs_url, headers=headers, timeout=5).text[:5000]
+                            else:
+                                info["hf_space_status"] = f"Space not found or inaccessible ({response.status_code})"
+                        except Exception as e:
+                            info["hf_space_status"] = f"Error fetching space info: {str(e)}"
+                else:
+                    info["hf_connection"] = "Authentication Failed or Token Invalid"
+            else:
+                info["hf_connection"] = "No Token Found"
+
+            self.send_response(200, 'OK')
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(info).encode('utf-8'))
+
+        def handle_repo_add_api(self):
+            import json
+            import os
+            from .gitautodeploy import GitAutoDeploy
+
+            content_length = int(self.headers.get('content-length', 0))
+            if content_length == 0:
+                self.send_response(400)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "message": "Empty request"}).encode('utf-8'))
+                return
+
+            request_body = self.rfile.read(content_length).decode('utf-8')
+            try:
+                data = json.loads(request_body)
+                repo_url = data.get('url')
+                inject_actions = data.get('inject_actions', False)
+                if not repo_url:
+                    self.send_response(400)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": False, "message": "Missing URL"}).encode('utf-8'))
+                    return
+
+                # Auto-generate Space ID from URL
+                # e.g. https://github.com/user/repo -> user/repo
+                import re
+                match = re.search(r'github\.com[:/]([^/]+/[^/.]+)(\.git)?', repo_url)
+                if not match:
+                    self.send_response(400)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": False, "message": "Invalid GitHub URL"}).encode('utf-8'))
+                    return
+
+                repo_name = match.group(1)
+                # Robust profile detection: try various common env vars used in HF Spaces
+                hf_profile = os.environ.get('HF_PROFILE') or \
+                             os.environ.get('HF_Profile') or \
+                             os.environ.get('HF_USERNAME') or \
+                             os.environ.get('HF_USER') or \
+                             os.environ.get('SPACE_AUTHOR_NAME')
+
+                if not hf_profile:
+                    # Fallback to extracting from SPACE_ID if available (e.g. "user/space" -> "user")
+                    space_id_env = os.environ.get('SPACE_ID')
+                    if space_id_env and '/' in space_id_env:
+                        hf_profile = space_id_env.split('/')[0]
+
+                # Use whoami to ensure we have the correct case for the profile
+                token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN') or os.environ.get('hf_token')
+                if token:
+                    try:
+                        whoami_url = "https://huggingface.co/api/whoami-v2"
+                        headers = {"Authorization": f"Bearer {token}"}
+                        whoami_res = requests.get(whoami_url, headers=headers, timeout=5)
+                        if whoami_res.status_code == 200:
+                            whoami_data = whoami_res.json()
+                            hf_user = whoami_data.get('name')
+                            hf_orgs = [org.get('name') for org in whoami_data.get('orgs', [])]
+
+                            # If no profile set, use the identified username
+                            if not hf_profile:
+                                hf_profile = hf_user
+                            # If profile matches username case-insensitively, use the correct case from whoami
+                            elif hf_profile.lower() == hf_user.lower():
+                                hf_profile = hf_user
+                            # If profile matches an org case-insensitively, use the correct case from whoami
+                            else:
+                                for org in hf_orgs:
+                                    if hf_profile.lower() == org.lower():
+                                        hf_profile = org
+                                        break
+                    except:
+                        pass
+
+                if not hf_profile:
+                    # Final fallback if everything fails
+                    hf_profile = 'user'
+
+                space_id = hf_profile + '/' + repo_name.split('/')[-1]
+
+                # Determine which token env var to use for the command string
+                hf_token_var = 'HF_TOKEN' if 'HF_TOKEN' in os.environ else 'HUGGING_FACE_HUB_TOKEN'
+
+                # Use absolute path for scripts/deploy_to_hf.py to avoid relative path issues
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                deploy_script = os.path.join(base_dir, 'scripts', 'deploy_to_hf.py')
+
+                repo_config = {
+                    'url': repo_url,
+                    'branch': 'main',
+                    'remote': 'origin',
+                    'path': f'/app/repositories/{repo_name.split("/")[-1]}',
+                    'deploy': f'python3 {deploy_script} --repo-path . --space-id {space_id} --branch %branch% --create --token ${hf_token_var}',
+                    'huggingface_space': space_id,
+                    'report_to_jules': True
+                }
+
+                success, msg = GitAutoDeploy().add_repository(repo_config, inject_actions=inject_actions)
+
+                response_data = {"success": success, "message": msg, "repo_config": repo_config}
+                self.send_response(200, 'OK')
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(response_data).encode('utf-8'))
+
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "message": str(e)}).encode('utf-8'))
 
         def do_POST(self):
             """Invoked on incoming POST requests"""
+
+            if self.path == "/api/repo/add":
+                self.handle_repo_add_api()
+                return
+
             from threading import Timer
             import logging
             import json
             import threading
             try:
                 from urlparse import parse_qs
-            except ModuleNotFoundError:
+            except (ModuleNotFoundError, ImportError):
                 from urllib.parse import parse_qs
 
             logger = logging.getLogger()
 
-            content_length = int(self.headers.get('content-length'))
+            content_length = int(self.headers.get('content-length', 0))
             request_body = self.rfile.read(content_length).decode('utf-8')
 
             # Extract request headers and make all keys to lowercase (makes them easier to compare)
@@ -115,8 +358,8 @@ def WebhookRequestHandlerFactory(config, event_store, server_status, is_https=Fa
             action.log_info('Incoming request from %s:%s' % (self.client_address[0], self.client_address[1]))
 
             # Payloads from GitHub can be delivered as form data. Test the request for this pattern and extract json payload
-            if request_headers['content-type'] == 'application/x-www-form-urlencoded':
-                res = parse_qs(request_body.decode('utf-8'))
+            if 'content-type' in request_headers and request_headers['content-type'] == 'application/x-www-form-urlencoded':
+                res = parse_qs(request_body)
                 if 'payload' in res and len(res['payload']) == 1:
                     request_body = res['payload'][0]
 

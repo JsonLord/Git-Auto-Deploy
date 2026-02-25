@@ -1,70 +1,35 @@
 {
-  // HTTP server options
-  //"http-enabled": true,
-  //"http-host": "0.0.0.0",
-  //"http-port": 8001,
-
-  // HTTPS server options
-  //"https-enabled": false,
-  //"https-host": "0.0.0.0",
-  //"https-port": 8002,
-
-  // Web socket server options (used by web UI for real time updates)
-  //"wss-enabled": false,
-  //"wss-host": "0.0.0.0",
-  //"wss-port": 8003,
-
-  // Web user interface options
-  //"web-ui-enabled": false,
-  //"web-ui-username": null,
-  //"web-ui-password": null,
-  //"web-ui-whitelist": ["127.0.0.1"],
-
-  // TLS/SSL cert (necessary for HTTPS and web socket server to work)
-  //"ssl-key": null,  // If specified, holds the private key
-  //"ssl-cert": "cert.pem",  // Holds the public key or both the private and public keys
-
-  // File to store a copy of the console output
-  "log-file": "~/gitautodeploy.log",
-
-  // File to store the process id (pid)
-  "pid-file": "~/.gitautodeploy.pid",
-
-  // Record all log levels by default
+  "http-enabled": true,
+  "http-host": "0.0.0.0",
+  "http-port": 7860,
+  "https-enabled": false,
+  "wss-enabled": false,
+  "web-ui-enabled": true,
+  "web-ui-auth-enabled": false,
+  "web-ui-require-https": false,
+  "log-file": "/tmp/gitautodeploy.log",
+  "pid-file": "/tmp/gitautodeploy.pid",
   "log-level": "INFO",
-
-  // Deploy commands that should be executed for all projects
-  //"global_deploy": [
-  //  "echo Deploy started!",
-  //  "echo Deploy completed!"
-  //],
 
   "repositories": [
     {
-      "url": "https://github.com/olipo186/Git-Auto-Deploy.git",
-      "branch": "master",
+      "url": "https://github.com/your-org/repo-1.git",
+      "branch": "main",
       "remote": "origin",
-      "path": "~/repositories/Git-Auto-Deploy",
-      "deploy": "echo deploying"
+      "path": "/app/repositories/repo-1",
+      "deploy": "python3 scripts/deploy_to_hf.py --repo-path . --space-id your-org/space-1 --branch %branch%",
+      "huggingface_space": "your-org/space-1",
+      "report_to_jules": true,
+      "deploy_newest_branch": true
     },
     {
-      "url": "https://github.com/github/gitignore",
-      "path": "~/repositories/gitignore"
-    },
-    {
-      "url": "git@gitlab.com:gitlab-org/gitlab-ce.git",
-      "path": "~/repositories/gitignore"
-    },
-    {
-      "url": "https://api.github.com/repos/olipo186/Git-Auto-Deploy",
-      "deploy": "echo deploying after pull request",
-      "filters": [
-        {
-          "type": "pull-request-filter",
-          "action": "closed",
-          "ref": "testing-branch"
-        }
-      ]
+      "url": "https://github.com/your-org/repo-2.git",
+      "branch": "main",
+      "remote": "origin",
+      "path": "/app/repositories/repo-2",
+      "deploy": "python3 scripts/deploy_to_hf.py --repo-path . --space-id your-org/space-2 --branch main",
+      "huggingface_space": "your-org/space-2",
+      "report_to_jules": true
     }
   ]
 }

@@ -29,15 +29,15 @@ def get_config_defaults():
     # HTTP server options
     config['http-enabled'] = True
     config['http-host'] = '0.0.0.0'
-    config['http-port'] = 8001
+    config['http-port'] = 7860
 
     # HTTPS server options
-    config['https-enabled'] = True
+    config['https-enabled'] = False
     config['https-host'] = '0.0.0.0'
     config['https-port'] = 8002
 
     # Web socket server options (used by web UI for real time updates)
-    config['wss-enabled'] = False  # Disabled by default until authentication is in place
+    config['wss-enabled'] = False
     config['wss-host'] = '0.0.0.0'
     config['wss-port'] = 8003
 
@@ -46,16 +46,19 @@ def get_config_defaults():
     config['ssl-cert'] = '~/cert.pem'  # Holds the public key or both the private and public keys
 
     # Web user interface options
-    config['web-ui-enabled'] = False  # Disabled by default until authentication is in place
+    config['web-ui-enabled'] = True
     config['web-ui-username'] = None
     config['web-ui-password'] = None
-    config['web-ui-whitelist'] = ['127.0.0.1']
-    config['web-ui-require-https'] = True
-    config['web-ui-auth-enabled'] = True
+    config['web-ui-whitelist'] = []
+    config['web-ui-require-https'] = False
+    config['web-ui-auth-enabled'] = False
     config['web-ui-prevent-root'] = True
 
     # Record all log levels by default
     config['log-level'] = 'NOTSET'
+
+    # GitHub Autonomous Sync (hours, 0 to disable)
+    config['github-sync-interval'] = 0
 
     # Other options
     config['intercept-stdout'] = True
@@ -392,7 +395,7 @@ def init_config(config):
             repo_config['deploy_commands'] = []
 
         # Check if any global pre deploy commands is specified
-        if 'global_deploy' in config and len(config['global_deploy']) > 0 and len(config['global_deploy'][0]) is not 0:
+        if 'global_deploy' in config and len(config['global_deploy']) > 0 and len(config['global_deploy'][0]) != 0:
             repo_config['deploy_commands'].insert(0, config['global_deploy'][0])
 
         # Check if any repo specific deploy command is specified
@@ -400,7 +403,7 @@ def init_config(config):
             repo_config['deploy_commands'].append(repo_config['deploy'])
 
         # Check if any global post deploy command is specified
-        if 'global_deploy' in config and len(config['global_deploy']) > 1 and len(config['global_deploy'][1]) is not 0:
+        if 'global_deploy' in config and len(config['global_deploy']) > 1 and len(config['global_deploy'][1]) != 0:
             repo_config['deploy_commands'].append(config['global_deploy'][1])
 
         # If a repository is configured with embedded credentials, we create an alternate URL
